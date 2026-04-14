@@ -1,25 +1,54 @@
 'use client';
 
 import { usePathname } from 'next/navigation';
+import NotificationBell from '@/components/ui/NotificationBell';
 
 const titleMap: Record<string, string> = {
   '/dashboard': 'Tableau de Bord',
   '/position': 'Position Bancaire',
   '/encaissements': 'Encaissements',
-  '/decaissements': 'D\u00e9caissements',
+  '/decaissements': 'Décaissements',
+  '/facturation': 'Appels à Facturation',
+  '/charges': 'Charges Récurrentes',
+  '/previsionnel': 'Prévisionnel',
+  '/parametres': 'Paramètres',
+  '/notifications': 'Notifications',
+  '/historique': 'Historique',
+  '/rapprochement': 'Rapprochement Bancaire',
+};
+
+const subtitleMap: Record<string, string> = {
+  '/dashboard': 'Vue d\'ensemble de la trésorerie',
+  '/position': 'Soldes bancaires par entité',
+  '/encaissements': 'Suivi des paiements clients',
+  '/decaissements': 'Suivi des factures fournisseurs',
+  '/facturation': 'Suivi des factures émises et relances',
+  '/charges': 'Charges fixes et récurrentes',
+  '/previsionnel': 'Projections de trésorerie',
+  '/parametres': 'Configuration du système',
+  '/notifications': 'Centre de notifications',
+  '/historique': 'Journal des modifications',
+  '/rapprochement': 'Comparaison mouvements reels vs saisis',
 };
 
 export default function Header() {
   const pathname = usePathname();
 
-  const title =
-    Object.entries(titleMap).find(([path]) =>
-      pathname === path || pathname.startsWith(path + '/')
-    )?.[1] ?? 'CTBG Tr\u00e9sorerie';
+  const entry = Object.entries(titleMap).find(([path]) =>
+    pathname === path || pathname.startsWith(path + '/')
+  );
+  const title = entry?.[1] ?? 'CTBG Trésorerie';
+  const subtitle = entry ? subtitleMap[entry[0]] : '';
 
   return (
-    <header className="h-16 bg-white border-b border-gray-border flex items-center px-6">
-      <h1 className="text-xl font-semibold text-gray-dark">{title}</h1>
+    <header className="h-16 bg-white border-b border-gray-border flex items-center justify-between px-6 shadow-sm">
+      <div>
+        <h1 className="text-lg font-semibold text-gray-dark leading-tight">{title}</h1>
+        {subtitle && (
+          <p className="text-xs text-gray-text">{subtitle}</p>
+        )}
+      </div>
+      <NotificationBell />
     </header>
   );
 }

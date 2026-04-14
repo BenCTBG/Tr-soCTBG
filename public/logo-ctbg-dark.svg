@@ -1,0 +1,12 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 280 80" fill="none">
+  <!-- Red geometric icon -->
+  <g transform="translate(10, 5)">
+    <path d="M30 0 L60 18 L60 28 L30 10 Z" fill="#C00000"/>
+    <path d="M0 18 L30 0 L30 10 L0 28 Z" fill="#E53030"/>
+    <path d="M0 28 L30 46 L30 70 L0 52 Z" fill="#C00000"/>
+    <path d="M30 46 L60 28 L60 52 L30 70 Z" fill="#8B0000"/>
+    <path d="M15 32 L45 18 L45 38 L15 52 Z" fill="#E53030" opacity="0.8"/>
+  </g>
+  <!-- CTBG Text - dark version for light backgrounds -->
+  <text x="85" y="55" font-family="Arial, Helvetica, sans-serif" font-weight="bold" font-size="42" letter-spacing="6" fill="#1a1a2e">CTBG</text>
+</svg>

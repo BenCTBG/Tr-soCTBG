@@ -46,12 +46,48 @@ export const STATUS_LABELS_DISBURSEMENT: Record<string, string> = {
   ANNULE: 'Annulé',
 };
 
+export const PAYMENT_METHOD_LABELS: Record<string, string> = {
+  VIREMENT: 'Virement',
+  CB: 'Carte bancaire',
+  LCR: 'LCR',
+  CHEQUE: 'Chèque',
+  PRELEVEMENT: 'Prélèvement',
+  ESPECES: 'Espèces',
+  AUTRE: 'Autre',
+};
+
 export const RECEIPT_TYPE_LABELS: Record<string, string> = {
   CLIENT_DIRECT: 'Client direct',
   CEE: 'CEE',
   MPR: 'MPR',
   AVOIR: 'Avoir',
   AUTRE: 'Autre',
+};
+
+export const CHARGE_FREQUENCY_LABELS: Record<string, string> = {
+  MENSUEL: 'Mensuel',
+  TRIMESTRIEL: 'Trimestriel',
+  ANNUEL: 'Annuel',
+  HEBDOMADAIRE: 'Hebdomadaire',
+};
+
+export const CHARGE_CATEGORY_LABELS: Record<string, string> = {
+  LOYER: 'Loyer',
+  SALAIRES: 'Salaires',
+  ASSURANCE: 'Assurance',
+  ABONNEMENT: 'Abonnement',
+  CREDIT: 'Crédit',
+  IMPOT: 'Impôt',
+  AUTRE: 'Autre',
+};
+
+export const INVOICE_STATUS_LABELS: Record<string, string> = {
+  EMISE: 'Émise',
+  ENVOYEE: 'Envoyée',
+  RELANCEE: 'Relancée',
+  PAYEE: 'Payée',
+  IMPAYEE: 'Impayée',
+  LITIGE: 'Litige',
 };
 
 export function getAlertLevel(balance: number): string {

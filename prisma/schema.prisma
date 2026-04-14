@@ -54,6 +54,16 @@ enum DisbursementStatus {
   ANNULE
 }
 
+enum PaymentMethod {
+  VIREMENT
+  CB
+  LCR
+  CHEQUE
+  PRELEVEMENT
+  ESPECES
+  AUTRE
+}
+
 model User {
   id        String   @id @default(uuid())
   email     String   @unique
@@ -68,7 +78,12 @@ model User {
   receipts       Receipt[]
   disbursements  Disbursement[]
   validatedDisbursements Disbursement[] @relation("ValidatedBy")
+  recurringCharges RecurringCharge[] @relation("RecurringChargeCreator")
+  invoices       Invoice[] @relation("InvoiceCreator")
+  invoiceReminders InvoiceReminder[] @relation("ReminderCreator")
   auditLogs      AuditLog[]
+  notifications          Notification[]
+  notificationPreference NotificationPreference?
 
   @@map("users")
 }
@@ -80,16 +95,38 @@ model Entity {
   createdAt DateTime @default(now()) @map("created_at")
 
   bankPositions BankPosition[]
+  bankAccounts  BankAccount[]
   receipts      Receipt[]
-  disbursements Disbursement[]
+  disbursements    Disbursement[]
+  invoices         Invoice[]
+  recurringCharges RecurringCharge[]
 
   @@map("entities")
+}
+
+model BankAccount {
+  id            String   @id @default(uuid())
+  entityId      String   @map("entity_id")
+  bankName      String   @map("bank_name")
+  accountNumber String?  @map("account_number")
+  iban          String?
+  label         String?
+  active        Boolean  @default(true)
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  entity        Entity         @relation(fields: [entityId], references: [id])
+  positions     BankPosition[]
+  disbursements Disbursement[]
+  invoices      Invoice[]
+
+  @@map("bank_accounts")
 }
 
 model BankPosition {
   id              String     @id @default(uuid())
   date            DateTime   @db.Date
   entityId        String     @map("entity_id")
+  bankAccountId   String?    @map("bank_account_id")
   balance         Decimal    @db.Decimal(12, 2)
   previousBalance Decimal    @map("previous_balance") @db.Decimal(12, 2)
   variation       Decimal    @db.Decimal(12, 2)
@@ -97,10 +134,11 @@ model BankPosition {
   createdBy       String     @map("created_by")
   createdAt       DateTime   @default(now()) @map("created_at")
 
-  entity Entity @relation(fields: [entityId], references: [id])
-  user   User   @relation(fields: [createdBy], references: [id])
+  entity      Entity       @relation(fields: [entityId], references: [id])
+  bankAccount BankAccount? @relation(fields: [bankAccountId], references: [id])
+  user        User         @relation(fields: [createdBy], references: [id])
 
-  @@unique([date, entityId])
+  @@index([date, entityId, bankAccountId])
   @@map("bank_positions")
 }
 
@@ -111,45 +149,91 @@ model Receipt {
   invoiceNumber String        @map("invoice_number")
   clientName    String        @map("client_name")
   siteAddress   String?       @map("site_address")
+  department    String?       @db.VarChar(3)
   amountTtc     Decimal       @map("amount_ttc") @db.Decimal(12, 2)
   type          ReceiptType
   status        ReceiptStatus @default(ATTENDU)
+  filingDate    DateTime?     @map("filing_date") @db.Date
   receivedDate  DateTime?     @map("received_date") @db.Date
+  delayDays     Int?          @map("delay_days")
   observations  String?
   createdBy     String        @map("created_by")
   createdAt     DateTime      @default(now()) @map("created_at")
   updatedAt     DateTime      @updatedAt @map("updated_at")
 
-  entity Entity @relation(fields: [entityId], references: [id])
-  user   User   @relation(fields: [createdBy], references: [id])
+  entity  Entity   @relation(fields: [entityId], references: [id])
+  user    User     @relation(fields: [createdBy], references: [id])
+  invoice Invoice?
 
   @@map("receipts")
 }
 
 model Disbursement {
-  id             String               @id @default(uuid())
-  receivedDate   DateTime             @map("received_date") @db.Date
-  entityId       String               @map("entity_id")
-  supplier       String
-  siteRef        String?              @map("site_ref")
-  amountHt       Decimal?             @map("amount_ht") @db.Decimal(12, 2)
-  amountTtc      Decimal              @map("amount_ttc") @db.Decimal(12, 2)
-  priority       DisbursementPriority
-  paymentDueDate DateTime?            @map("payment_due_date") @db.Date
-  status         DisbursementStatus   @default(A_PAYER)
-  validatedBy    String?              @map("validated_by")
-  paidDate       DateTime?            @map("paid_date") @db.Date
-  fileUrl        String?              @map("file_url")
-  observations   String?
-  createdBy      String               @map("created_by")
-  createdAt      DateTime             @default(now()) @map("created_at")
-  updatedAt      DateTime             @updatedAt @map("updated_at")
+  id              String               @id @default(uuid())
+  receivedDate    DateTime             @map("received_date") @db.Date
+  entityId        String               @map("entity_id")
+  bankAccountId   String?              @map("bank_account_id")
+  supplier        String
+  siteRef         String?              @map("site_ref")
+  amountHt        Decimal?             @map("amount_ht") @db.Decimal(12, 2)
+  amountTtc       Decimal              @map("amount_ttc") @db.Decimal(12, 2)
+  priority        DisbursementPriority
+  paymentMethod   PaymentMethod?       @map("payment_method")
+  paymentDueDate  DateTime?            @map("payment_due_date") @db.Date
+  status          DisbursementStatus   @default(A_PAYER)
+  validatedBy     String?              @map("validated_by")
+  paidDate        DateTime?            @map("paid_date") @db.Date
+  fileUrl         String?              @map("file_url")
+  observations    String?
+  createdBy       String               @map("created_by")
+  createdAt       DateTime             @default(now()) @map("created_at")
+  updatedAt       DateTime             @updatedAt @map("updated_at")
 
-  entity    Entity @relation(fields: [entityId], references: [id])
-  user      User   @relation(fields: [createdBy], references: [id])
-  validator User?  @relation("ValidatedBy", fields: [validatedBy], references: [id])
+  entity      Entity       @relation(fields: [entityId], references: [id])
+  bankAccount BankAccount? @relation(fields: [bankAccountId], references: [id])
+  user        User         @relation(fields: [createdBy], references: [id])
+  validator   User?        @relation("ValidatedBy", fields: [validatedBy], references: [id])
 
   @@map("disbursements")
+}
+
+enum ChargeFrequency {
+  MENSUEL
+  TRIMESTRIEL
+  ANNUEL
+  HEBDOMADAIRE
+}
+
+enum ChargeCategory {
+  LOYER
+  SALAIRES
+  ASSURANCE
+  ABONNEMENT
+  CREDIT
+  IMPOT
+  AUTRE
+}
+
+model RecurringCharge {
+  id            String          @id @default(uuid())
+  entityId      String          @map("entity_id")
+  label         String
+  category      ChargeCategory
+  frequency     ChargeFrequency
+  amountTtc     Decimal         @map("amount_ttc") @db.Decimal(12, 2)
+  dayOfMonth    Int?            @map("day_of_month")
+  startDate     DateTime        @map("start_date") @db.Date
+  endDate       DateTime?       @map("end_date") @db.Date
+  active        Boolean         @default(true)
+  observations  String?
+  createdBy     String          @map("created_by")
+  createdAt     DateTime        @default(now()) @map("created_at")
+  updatedAt     DateTime        @updatedAt @map("updated_at")
+
+  entity Entity @relation(fields: [entityId], references: [id])
+  user   User   @relation("RecurringChargeCreator", fields: [createdBy], references: [id])
+
+  @@map("recurring_charges")
 }
 
 model AuditLog {
@@ -163,4 +247,100 @@ model AuditLog {
   user User @relation(fields: [userId], references: [id])
 
   @@map("audit_log")
+}
+
+enum NotificationType {
+  SOLDE_CRITIQUE
+  FACTURE_URGENTE
+  ENCAISSEMENT_RETARD
+  VALIDATION_DG
+  PAIEMENT_EFFECTUE
+  POSITION_NON_SAISIE
+  SYSTEME
+}
+
+model Notification {
+  id        String           @id @default(uuid())
+  userId    String           @map("user_id")
+  type      NotificationType
+  title     String
+  message   String
+  read      Boolean          @default(false)
+  emailSent Boolean          @default(false) @map("email_sent")
+  link      String?
+  createdAt DateTime         @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("notifications")
+}
+
+enum InvoiceStatus {
+  EMISE
+  ENVOYEE
+  RELANCEE
+  PAYEE
+  IMPAYEE
+  LITIGE
+}
+
+model Invoice {
+  id              String        @id @default(uuid())
+  entityId        String        @map("entity_id")
+  bankAccountId   String?       @map("bank_account_id")
+  invoiceNumber   String        @map("invoice_number")
+  clientName      String        @map("client_name")
+  siteRef         String?       @map("site_ref")
+  amountHt        Decimal?      @map("amount_ht") @db.Decimal(12, 2)
+  amountTtc       Decimal       @map("amount_ttc") @db.Decimal(12, 2)
+  issueDate       DateTime      @map("issue_date") @db.Date
+  dueDate         DateTime?     @map("due_date") @db.Date
+  paymentMethod   PaymentMethod? @map("payment_method")
+  status          InvoiceStatus @default(EMISE)
+  paidDate        DateTime?     @map("paid_date") @db.Date
+  paidAmount      Decimal?      @map("paid_amount") @db.Decimal(12, 2)
+  fileUrl         String?       @map("file_url")
+  observations    String?
+  receiptId       String?       @unique @map("receipt_id")
+  createdBy       String        @map("created_by")
+  createdAt       DateTime      @default(now()) @map("created_at")
+  updatedAt       DateTime      @updatedAt @map("updated_at")
+
+  entity      Entity       @relation(fields: [entityId], references: [id])
+  bankAccount BankAccount? @relation(fields: [bankAccountId], references: [id])
+  user        User         @relation("InvoiceCreator", fields: [createdBy], references: [id])
+  receipt     Receipt?     @relation(fields: [receiptId], references: [id])
+  reminders   InvoiceReminder[]
+
+  @@map("invoices")
+}
+
+model InvoiceReminder {
+  id        String   @id @default(uuid())
+  invoiceId String   @map("invoice_id")
+  date      DateTime @default(now())
+  note      String?
+  createdBy String   @map("created_by")
+
+  invoice Invoice @relation(fields: [invoiceId], references: [id], onDelete: Cascade)
+  user    User    @relation("ReminderCreator", fields: [createdBy], references: [id])
+
+  @@map("invoice_reminders")
+}
+
+model NotificationPreference {
+  id          String  @id @default(uuid())
+  userId      String  @unique @map("user_id")
+  emailActive Boolean @default(true) @map("email_active")
+
+  soldeCritique      Boolean @default(true) @map("solde_critique")
+  factureUrgente     Boolean @default(true) @map("facture_urgente")
+  encaissementRetard Boolean @default(true) @map("encaissement_retard")
+  validationDg       Boolean @default(true) @map("validation_dg")
+  paiementEffectue   Boolean @default(true) @map("paiement_effectue")
+  positionNonSaisie  Boolean @default(true) @map("position_non_saisie")
+
+  user User @relation(fields: [userId], references: [id])
+
+  @@map("notification_preferences")
 }
