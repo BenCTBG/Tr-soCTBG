@@ -42,7 +42,7 @@ export async function GET(request: Request) {
     const [receipts, total] = await Promise.all([
       prisma.receipt.findMany({
         where,
-        include: { entity: true },
+        include: { entity: true, payments: true },
         orderBy: { expectedDate: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
@@ -91,6 +91,7 @@ export async function POST(request: Request) {
       department,
       filingDate,
       receivedDate,
+      ceeDelegataire,
       observations,
       status,
     } = body;
@@ -127,6 +128,7 @@ export async function POST(request: Request) {
         filingDate: filingDate ? new Date(filingDate) : null,
         receivedDate: receivedDate ? new Date(receivedDate) : null,
         delayDays,
+        ceeDelegataire: ceeDelegataire || null,
         observations: observations || null,
         status: status || 'ATTENDU',
         createdBy: session.user.id,

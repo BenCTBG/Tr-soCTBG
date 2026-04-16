@@ -28,20 +28,20 @@ const navItems: NavItem[] = [
     roles: ['ADMIN', 'COMPTABLE', 'ADV'],
   },
   {
-    label: 'Encaissements',
+    label: 'Facturation',
     href: '/encaissements',
     icon: '📥',
     roles: ['ADMIN', 'COMPTABLE', 'ADV', 'ADV_RESTREINT', 'OPERATEUR'],
     separator: true,
   },
   {
-    label: 'Décaissements',
+    label: 'Achat / Charge',
     href: '/decaissements',
     icon: '📤',
     roles: ['ADMIN', 'COMPTABLE', 'ADV', 'ADV_RESTREINT', 'OPERATEUR'],
   },
   {
-    label: 'Facturation',
+    label: 'CEE',
     href: '/facturation',
     icon: '📄',
     roles: ['ADMIN', 'COMPTABLE', 'ADV', 'ADV_RESTREINT', 'OPERATEUR'],

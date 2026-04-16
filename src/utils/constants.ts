@@ -64,6 +64,18 @@ export const RECEIPT_TYPE_LABELS: Record<string, string> = {
   AUTRE: 'Autre',
 };
 
+export const CEE_DELEGATAIRES = [
+  'VERTIGO',
+  'EFFY',
+  'PRIMESENERGIE',
+  'CERTIFICATS ECONOMIES ENERGIE',
+  'TOTAL ENERGIES',
+  'EDF',
+  'ENGIE',
+  'SONERGIA',
+  'AUTRE',
+] as const;
+
 export const CHARGE_FREQUENCY_LABELS: Record<string, string> = {
   MENSUEL: 'Mensuel',
   TRIMESTRIEL: 'Trimestriel',

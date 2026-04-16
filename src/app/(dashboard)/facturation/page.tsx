@@ -12,6 +12,7 @@ import { exportToExcel } from '@/utils/exportExcel';
 import {
   INVOICE_STATUS_LABELS,
   PAYMENT_METHOD_LABELS,
+  CEE_DELEGATAIRES,
 } from '@/utils/constants';
 
 interface EntityData {
@@ -44,6 +45,9 @@ interface Invoice {
   siteRef: string | null;
   amountHt: string | number | null;
   amountTtc: string | number;
+  amountCee: string | number | null;
+  ceeDelegataire: string | null;
+  resteAPayer: string | number | null;
   issueDate: string;
   dueDate: string | null;
   paymentMethod: string | null;
@@ -65,6 +69,9 @@ const emptyForm = {
   siteRef: '',
   amountHt: '',
   amountTtc: '',
+  amountCee: '',
+  ceeDelegataire: '',
+  resteAPayer: '',
   issueDate: '',
   dueDate: '',
   paymentMethod: '',
@@ -160,6 +167,9 @@ export default function FacturationPage() {
       siteRef: inv.siteRef || '',
       amountHt: inv.amountHt ? String(inv.amountHt) : '',
       amountTtc: String(inv.amountTtc),
+      amountCee: inv.amountCee ? String(inv.amountCee) : '',
+      ceeDelegataire: inv.ceeDelegataire || '',
+      resteAPayer: inv.resteAPayer ? String(inv.resteAPayer) : '',
       issueDate: toDateInput(inv.issueDate),
       dueDate: toDateInput(inv.dueDate),
       paymentMethod: inv.paymentMethod || '',
@@ -188,6 +198,9 @@ export default function FacturationPage() {
         siteRef: form.siteRef || undefined,
         amountHt: form.amountHt ? Number(form.amountHt) : undefined,
         amountTtc: Number(form.amountTtc),
+        amountCee: form.amountCee ? Number(form.amountCee) : undefined,
+        ceeDelegataire: form.ceeDelegataire || undefined,
+        resteAPayer: form.resteAPayer ? Number(form.resteAPayer) : undefined,
         issueDate: form.issueDate,
         dueDate: form.dueDate || undefined,
         paymentMethod: form.paymentMethod || undefined,
@@ -225,12 +238,14 @@ export default function FacturationPage() {
   const handleOCRExtracted = useCallback((fields: ExtractedFields) => {
     setForm((prev) => ({
       ...prev,
-      clientName: fields.fournisseur || prev.clientName,
+      clientName: fields.client || fields.fournisseur || prev.clientName,
       entityId: fields.entityId || prev.entityId,
       issueDate: fields.dateFacture || prev.issueDate,
       amountTtc: fields.montantTTC || prev.amountTtc,
       amountHt: fields.montantHT || prev.amountHt,
-      invoiceNumber: fields.numeroFacture || prev.invoiceNumber,
+      amountCee: fields.montantCEE || prev.amountCee,
+      resteAPayer: fields.resteAPayer || prev.resteAPayer,
+      invoiceNumber: fields.invoiceNumber || prev.invoiceNumber,
       paymentMethod: fields.paymentMethod || prev.paymentMethod,
       dueDate: fields.datePaiement || prev.dueDate,
     }));
@@ -285,6 +300,8 @@ export default function FacturationPage() {
         { header: 'Client', key: 'clientName' },
         { header: 'Entité', key: 'entity', transform: (v) => (v as { name?: string })?.name || '' },
         { header: 'Montant TTC', key: 'amountTtc', transform: (v) => Number(v) || 0 },
+        { header: 'Prime CEE', key: 'amountCee', transform: (v) => v ? Number(v) : '' },
+        { header: 'Reste à payer', key: 'resteAPayer', transform: (v) => v ? Number(v) : '' },
         { header: 'Date Émission', key: 'issueDate', transform: (v) => v ? String(v).substring(0, 10) : '' },
         { header: 'Échéance', key: 'dueDate', transform: (v) => v ? String(v).substring(0, 10) : '' },
         { header: 'Statut', key: 'status', transform: (v) => INVOICE_STATUS_LABELS[String(v)] || String(v) },
@@ -355,6 +372,8 @@ export default function FacturationPage() {
               <th className="bg-gray-light p-3 text-left font-semibold text-gray-dark border-b border-gray-border text-xs uppercase tracking-wide">Client</th>
               <th className="bg-gray-light p-3 text-left font-semibold text-gray-dark border-b border-gray-border text-xs uppercase tracking-wide">Entité</th>
               <th className="bg-gray-light p-3 text-left font-semibold text-gray-dark border-b border-gray-border text-xs uppercase tracking-wide">Montant TTC</th>
+              <th className="bg-gray-light p-3 text-left font-semibold text-gray-dark border-b border-gray-border text-xs uppercase tracking-wide">CEE</th>
+              <th className="bg-gray-light p-3 text-left font-semibold text-gray-dark border-b border-gray-border text-xs uppercase tracking-wide">Reste à payer</th>
               <th className="bg-gray-light p-3 text-left font-semibold text-gray-dark border-b border-gray-border text-xs uppercase tracking-wide">Émission</th>
               <th className="bg-gray-light p-3 text-left font-semibold text-gray-dark border-b border-gray-border text-xs uppercase tracking-wide">Échéance</th>
               <th className="bg-gray-light p-3 text-left font-semibold text-gray-dark border-b border-gray-border text-xs uppercase tracking-wide">Statut</th>
@@ -365,7 +384,7 @@ export default function FacturationPage() {
           <tbody>
             {invoices.length === 0 ? (
               <tr>
-                <td colSpan={9} className="p-6 text-center text-gray-text">Aucune facture trouvée</td>
+                <td colSpan={11} className="p-6 text-center text-gray-text">Aucune facture trouvée</td>
               </tr>
             ) : (
               invoices.map((inv) => {
@@ -380,6 +399,12 @@ export default function FacturationPage() {
                     <td className="p-3 border-b border-gray-border">{inv.clientName}</td>
                     <td className="p-3 border-b border-gray-border">{inv.entity?.name || '-'}</td>
                     <td className="p-3 border-b border-gray-border font-semibold">{formatCurrency(Number(inv.amountTtc))}</td>
+                    <td className="p-3 border-b border-gray-border text-blue-600">
+                      {inv.amountCee && Number(inv.amountCee) > 0 ? formatCurrency(Number(inv.amountCee)) : '-'}
+                    </td>
+                    <td className="p-3 border-b border-gray-border font-semibold">
+                      {inv.resteAPayer != null && Number(inv.resteAPayer) >= 0 ? formatCurrency(Number(inv.resteAPayer)) : formatCurrency(Number(inv.amountTtc))}
+                    </td>
                     <td className="p-3 border-b border-gray-border">{formatDate(inv.issueDate)}</td>
                     <td className={`p-3 border-b border-gray-border ${overdue ? 'text-error font-semibold' : ''}`}>
                       {inv.dueDate ? formatDate(inv.dueDate) : '-'}
@@ -444,6 +469,26 @@ export default function FacturationPage() {
             <FormField label="Montant TTC" type="number" value={form.amountTtc} onChange={setField('amountTtc')} placeholder="0" required />
           </div>
           <div className="grid grid-cols-2 gap-3">
+            <FormField label="Prime CEE" type="number" value={form.amountCee} onChange={(val) => {
+              setField('amountCee')(val);
+              // Auto-calculer reste à payer
+              if (form.amountTtc && val) {
+                const rap = Math.max(0, Number(form.amountTtc) - Number(val));
+                setField('resteAPayer')(rap.toFixed(2));
+              }
+            }} placeholder="0" />
+            <FormField label="Reste à payer client" type="number" value={form.resteAPayer} onChange={setField('resteAPayer')} placeholder="0" />
+          </div>
+          {form.amountCee && Number(form.amountCee) > 0 && (
+            <>
+              <FormField label="Délégataire CEE" value={form.ceeDelegataire} onChange={setField('ceeDelegataire')}
+                options={[{ value: '', label: '-- Sélectionner --' }, ...CEE_DELEGATAIRES.map((d) => ({ value: d, label: d }))]} />
+              <div className="mb-4 px-3 py-2 bg-blue-50 border border-blue-200 rounded-md text-xs text-blue-700">
+                CEE : <strong>{formatCurrency(Number(form.amountCee))}</strong> (délégataire{form.ceeDelegataire ? ` : ${form.ceeDelegataire}` : ''}) — Reste à charge client : <strong>{formatCurrency(Number(form.resteAPayer) || 0)}</strong>
+              </div>
+            </>
+          )}
+          <div className="grid grid-cols-2 gap-3">
             <FormField label="Date d'émission" type="date" value={form.issueDate} onChange={setField('issueDate')} required />
             <FormField label="Date d'échéance" type="date" value={form.dueDate} onChange={setField('dueDate')} />
           </div>
@@ -489,6 +534,22 @@ export default function FacturationPage() {
                 <span className="text-gray-text text-xs">Montant TTC</span>
                 <p className="font-semibold">{formatCurrency(Number(detailInvoice.amountTtc))}</p>
               </div>
+              {detailInvoice.amountCee && Number(detailInvoice.amountCee) > 0 && (
+                <>
+                  <div>
+                    <span className="text-gray-text text-xs">Prime CEE (délégataire)</span>
+                    <p className="font-semibold text-blue-600">{formatCurrency(Number(detailInvoice.amountCee))}</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-text text-xs">Délégataire CEE</span>
+                    <p className="font-semibold">{detailInvoice.ceeDelegataire || '-'}</p>
+                  </div>
+                  <div>
+                    <span className="text-gray-text text-xs">Reste à payer client</span>
+                    <p className="font-semibold text-orange-600">{formatCurrency(Number(detailInvoice.resteAPayer) || 0)}</p>
+                  </div>
+                </>
+              )}
               <div>
                 <span className="text-gray-text text-xs">Statut</span>
                 <p>

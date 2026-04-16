@@ -17,15 +17,6 @@ interface BankPosition {
   entity: { id: string; name: string };
 }
 
-interface Receipt {
-  id: string;
-  expectedDate: string;
-  receivedDate: string | null;
-  clientName: string;
-  amountTtc: number | string;
-  status: string;
-}
-
 interface Disbursement {
   id: string;
   receivedDate: string;
@@ -38,7 +29,7 @@ interface Disbursement {
 interface Movement {
   id: string;
   date: string;
-  type: 'Encaissement' | 'Decaissement';
+  type: 'Decaissement';
   label: string;
   amount: number;
 }
@@ -83,9 +74,8 @@ export default function RapprochementPage() {
     params.set('limit', '100');
 
     try {
-      const [bankRes, receiptsRes, disbursementsRes] = await Promise.all([
+      const [bankRes, disbursementsRes] = await Promise.all([
         fetch(`/api/bank-positions?${params.toString()}`),
-        fetch(`/api/receipts?${params.toString()}&status=ENCAISSE`),
         fetch(`/api/disbursements?${params.toString()}&status=PAYE`),
       ]);
 
@@ -99,25 +89,6 @@ export default function RapprochementPage() {
           0
         );
         setBankVariationTotal(variationSum);
-      }
-
-      // Receipts
-      const receiptMovements: Movement[] = [];
-      let receiptTotal = 0;
-      if (receiptsRes.ok) {
-        const receiptsJson = await receiptsRes.json();
-        const receipts: Receipt[] = receiptsJson.data || [];
-        for (const r of receipts) {
-          const amt = Number(r.amountTtc) || 0;
-          receiptTotal += amt;
-          receiptMovements.push({
-            id: r.id,
-            date: r.receivedDate || r.expectedDate,
-            type: 'Encaissement',
-            label: r.clientName,
-            amount: amt,
-          });
-        }
       }
 
       // Disbursements
@@ -139,11 +110,11 @@ export default function RapprochementPage() {
         }
       }
 
-      const allMovements = [...receiptMovements, ...disbursementMovements].sort(
+      const allMovements = disbursementMovements.sort(
         (a, b) => new Date(a.date).getTime() - new Date(b.date).getTime()
       );
       setMovements(allMovements);
-      setMovementsTotal(receiptTotal - disbursementTotal);
+      setMovementsTotal(-disbursementTotal);
     } catch {
       // silent
     }
@@ -270,32 +241,20 @@ export default function RapprochementPage() {
                   </td>
                 </tr>
               ) : (
-                movements.map((m) => {
-                  const isEncaissement = m.type === 'Encaissement';
-                  return (
+                movements.map((m) => (
                     <tr key={m.id} className="hover:bg-gray-light transition-colors">
                       <td className="p-3 border-b border-gray-border">
                         {formatDate(m.date)}
                       </td>
-                      <td
-                        className={`p-3 border-b border-gray-border font-semibold ${
-                          isEncaissement ? 'text-green-600' : 'text-red-600'
-                        }`}
-                      >
-                        {m.type}
+                      <td className="p-3 border-b border-gray-border font-semibold text-red-600">
+                        Décaissement
                       </td>
                       <td className="p-3 border-b border-gray-border">{m.label}</td>
-                      <td
-                        className={`p-3 border-b border-gray-border font-semibold ${
-                          isEncaissement ? 'text-green-600' : 'text-red-600'
-                        }`}
-                      >
-                        {isEncaissement ? '+' : '-'}
-                        {formatCurrency(m.amount)}
+                      <td className="p-3 border-b border-gray-border font-semibold text-red-600">
+                        -{formatCurrency(m.amount)}
                       </td>
                     </tr>
-                  );
-                })
+                  ))
               )}
             </tbody>
           </table>

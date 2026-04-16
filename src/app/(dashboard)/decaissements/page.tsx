@@ -67,6 +67,17 @@ function toDateInput(val: string | null | undefined): string {
   return val.substring(0, 10);
 }
 
+function getISOWeek(dateStr: string): string {
+  const date = new Date(dateStr);
+  if (isNaN(date.getTime())) return '-';
+  const d = new Date(Date.UTC(date.getFullYear(), date.getMonth(), date.getDate()));
+  const dayNum = d.getUTCDay() || 7;
+  d.setUTCDate(d.getUTCDate() + 4 - dayNum);
+  const yearStart = new Date(Date.UTC(d.getUTCFullYear(), 0, 1));
+  const weekNo = Math.ceil(((d.getTime() - yearStart.getTime()) / 86400000 + 1) / 7);
+  return `S${weekNo}`;
+}
+
 export default function DecaissementsPage() {
   const [disbursements, setDisbursements] = useState<Disbursement[]>([]);
   const [entities, setEntities] = useState<EntityData[]>([]);
@@ -76,6 +87,13 @@ export default function DecaissementsPage() {
 
   // Form
   const [form, setForm] = useState({ ...emptyForm });
+
+  // CB Import modal
+  const [cbModalOpen, setCbModalOpen] = useState(false);
+  const [cbEntityId, setCbEntityId] = useState('');
+  const [cbParsedTx, setCbParsedTx] = useState<Array<{ transactionNumber: string; transactionDate: string; label: string; amount: number }>>([]);
+  const [cbImportResult, setCbImportResult] = useState<{ imported: number; duplicates: number } | null>(null);
+  const [cbParsing, setCbParsing] = useState(false);
 
   // Filters
   const [filterEntity, setFilterEntity] = useState('');
@@ -250,10 +268,16 @@ export default function DecaissementsPage() {
           onClick={openCreate}
           className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-ctbg-red text-white border-none rounded-md text-sm font-semibold cursor-pointer hover:bg-ctbg-red-hover hover:-translate-y-0.5 hover:shadow-lg transition-all"
         >
-          + Nouveau décaissement
+          + Nouvel achat
         </button>
         <button onClick={handleExport} className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-white text-gray-dark border border-gray-border rounded-md text-sm font-semibold cursor-pointer hover:bg-gray-light transition-all">
-          Export Excel
+          📊 Export Excel
+        </button>
+        <button onClick={() => window.open('/api/import-template?type=achats', '_blank')} className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-white text-gray-dark border border-gray-border rounded-md text-sm font-semibold cursor-pointer hover:bg-gray-light transition-all">
+          📥 Modèle d&apos;import
+        </button>
+        <button onClick={() => setCbModalOpen(true)} className="inline-flex items-center gap-1.5 px-4 py-2.5 bg-blue-600 text-white border-none rounded-md text-sm font-semibold cursor-pointer hover:bg-blue-700 transition-all">
+          💳 Import relevé CB
         </button>
       </div>
 
@@ -292,6 +316,7 @@ export default function DecaissementsPage() {
           <thead>
             <tr>
               <th className="bg-gray-light p-3 text-left font-semibold text-gray-dark border-b border-gray-border text-xs uppercase tracking-wide">Date Réception</th>
+              <th className="bg-gray-light p-3 text-left font-semibold text-gray-dark border-b border-gray-border text-xs uppercase tracking-wide">Semaine</th>
               <th className="bg-gray-light p-3 text-left font-semibold text-gray-dark border-b border-gray-border text-xs uppercase tracking-wide">Fournisseur</th>
               <th className="bg-gray-light p-3 text-left font-semibold text-gray-dark border-b border-gray-border text-xs uppercase tracking-wide">Entité</th>
               <th className="bg-gray-light p-3 text-left font-semibold text-gray-dark border-b border-gray-border text-xs uppercase tracking-wide">Compte</th>
@@ -304,7 +329,7 @@ export default function DecaissementsPage() {
           <tbody>
             {disbursements.length === 0 ? (
               <tr>
-                <td colSpan={8} className="p-6 text-center text-gray-text">Aucun décaissement trouvé</td>
+                <td colSpan={9} className="p-6 text-center text-gray-text">Aucun décaissement trouvé</td>
               </tr>
             ) : (
               disbursements.map((d) => (
@@ -314,6 +339,7 @@ export default function DecaissementsPage() {
                   className="hover:bg-gray-light transition-colors cursor-pointer"
                 >
                   <td className="p-3 border-b border-gray-border">{formatDate(d.receivedDate)}</td>
+                  <td className="p-3 border-b border-gray-border text-xs text-gray-text">{getISOWeek(d.receivedDate)}</td>
                   <td className="p-3 border-b border-gray-border">{d.supplier}</td>
                   <td className="p-3 border-b border-gray-border">{d.entity?.name || '-'}</td>
                   <td className="p-3 border-b border-gray-border text-xs text-gray-text">{d.bankAccount?.bankName || '-'}</td>
@@ -332,6 +358,72 @@ export default function DecaissementsPage() {
         </table>
       </div>
 
+      {/* Synthèse par entité */}
+      {disbursements.length > 0 && (() => {
+        const entityMap = new Map<string, { name: string; count: number; total: number; immediat: number; sous3j: number; bloque: number; attenteDG: number }>();
+        disbursements.forEach((d) => {
+          const key = d.entityId;
+          if (!entityMap.has(key)) {
+            entityMap.set(key, { name: d.entity?.name || '-', count: 0, total: 0, immediat: 0, sous3j: 0, bloque: 0, attenteDG: 0 });
+          }
+          const entry = entityMap.get(key)!;
+          const amt = Number(d.amountTtc) || 0;
+          entry.count += 1;
+          entry.total += amt;
+          if (d.priority === 'IMMEDIAT') entry.immediat += amt;
+          if (d.priority === 'SOUS_3J') entry.sous3j += amt;
+          if (d.priority === 'BLOQUE') entry.bloque += amt;
+          if (d.status === 'EN_ATTENTE_DG') entry.attenteDG += amt;
+        });
+        const rows = Array.from(entityMap.values());
+        const totals = rows.reduce(
+          (acc, r) => ({ count: acc.count + r.count, total: acc.total + r.total, immediat: acc.immediat + r.immediat, sous3j: acc.sous3j + r.sous3j, bloque: acc.bloque + r.bloque, attenteDG: acc.attenteDG + r.attenteDG }),
+          { count: 0, total: 0, immediat: 0, sous3j: 0, bloque: 0, attenteDG: 0 }
+        );
+        const thClass = "bg-gray-light p-3 text-left font-semibold text-gray-dark border-b border-gray-border text-xs uppercase tracking-wide";
+        const tdClass = "p-3 border-b border-gray-border text-sm";
+        return (
+          <div className="bg-white p-6 rounded-lg shadow-card mt-6">
+            <h3 className="text-base font-bold text-gray-dark mb-4">{'📊'} Synthèse par entité</h3>
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr>
+                  <th className={thClass}>Entité</th>
+                  <th className={thClass}>Nb Factures</th>
+                  <th className={thClass}>Montant Total</th>
+                  <th className={thClass}>🔴 À payer immédiatement</th>
+                  <th className={thClass}>🟠 À payer sous 3 jours</th>
+                  <th className={thClass}>⛔ Paiement bloqué</th>
+                  <th className={thClass}>⏳ En attente validation DG</th>
+                </tr>
+              </thead>
+              <tbody>
+                {rows.map((r) => (
+                  <tr key={r.name}>
+                    <td className={tdClass}>{r.name}</td>
+                    <td className={tdClass}>{r.count}</td>
+                    <td className={tdClass}>{formatCurrency(r.total)}</td>
+                    <td className={`${tdClass} text-red-600 font-semibold`}>{formatCurrency(r.immediat)}</td>
+                    <td className={`${tdClass} text-orange-500 font-semibold`}>{formatCurrency(r.sous3j)}</td>
+                    <td className={`${tdClass} text-gray-500`}>{formatCurrency(r.bloque)}</td>
+                    <td className={`${tdClass} text-yellow-600`}>{formatCurrency(r.attenteDG)}</td>
+                  </tr>
+                ))}
+                <tr className="font-bold bg-gray-50">
+                  <td className={tdClass}>TOTAL</td>
+                  <td className={tdClass}>{totals.count}</td>
+                  <td className={tdClass}>{formatCurrency(totals.total)}</td>
+                  <td className={`${tdClass} text-red-600`}>{formatCurrency(totals.immediat)}</td>
+                  <td className={`${tdClass} text-orange-500`}>{formatCurrency(totals.sous3j)}</td>
+                  <td className={`${tdClass} text-gray-500`}>{formatCurrency(totals.bloque)}</td>
+                  <td className={`${tdClass} text-yellow-600`}>{formatCurrency(totals.attenteDG)}</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        );
+      })()}
+
       <Modal isOpen={modalOpen} onClose={closeModal} title={isEditing ? 'Modifier Décaissement' : 'Nouveau Décaissement'}>
         <form onSubmit={handleSubmit}>
           {!isEditing && (
@@ -346,7 +438,7 @@ export default function DecaissementsPage() {
           <FormField label="Date Réception" type="date" value={form.receivedDate} onChange={setField('receivedDate')} required />
           <FormField label="Entité" value={form.entityId} onChange={(val) => { setField('entityId')(val); setField('bankAccountId')(''); }} required
             options={entities.map((e) => ({ value: e.id, label: e.name }))} />
-          <FormField label="Compte débité" value={form.bankAccountId} onChange={setField('bankAccountId')}
+          <FormField label="Compte à débiter" value={form.bankAccountId} onChange={setField('bankAccountId')}
             options={[
               { value: '', label: '-- Non spécifié --' },
               ...bankAccounts
@@ -378,6 +470,195 @@ export default function DecaissementsPage() {
             </button>
           </div>
         </form>
+      </Modal>
+
+      {/* Modal Import Relevé CB */}
+      <Modal isOpen={cbModalOpen} onClose={() => { setCbModalOpen(false); setCbParsedTx([]); setCbImportResult(null); }} title="Import Relevé Carte Bleue">
+        <div className="mb-4">
+          <p className="text-xs text-gray-500 mb-3">
+            Importez un relevé CB au format PDF. Les transactions seront extraites automatiquement.
+            Les doublons (même n° de transaction) seront ignorés.
+          </p>
+
+          <div className="mb-3">
+            <label className="block text-xs font-medium text-gray-600 mb-1">Entité *</label>
+            <select
+              value={cbEntityId}
+              onChange={(e) => setCbEntityId(e.target.value)}
+              className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+            >
+              <option value="">-- Sélectionner --</option>
+              {entities.map((ent) => (
+                <option key={ent.id} value={ent.id}>{ent.name}</option>
+              ))}
+            </select>
+          </div>
+
+          <div className="mb-3">
+            <label className="block text-xs font-medium text-gray-600 mb-1">Fichier PDF du relevé</label>
+            <input
+              type="file"
+              accept=".pdf"
+              onChange={async (e) => {
+                const file = e.target.files?.[0];
+                if (!file) return;
+                setCbParsing(true);
+                setCbImportResult(null);
+                try {
+                  // Use OCR to extract text from PDF
+                  const { createWorker } = await import('tesseract.js');
+                  const pdfjsLib = (window as any).pdfjsLib;
+                  if (!pdfjsLib) {
+                    alert('pdf.js non chargé');
+                    setCbParsing(false);
+                    return;
+                  }
+
+                  const arrayBuffer = await file.arrayBuffer();
+                  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
+                  const numPages = Math.min(pdf.numPages, 10);
+
+                  let fullText = '';
+                  // Render each page and OCR
+                  const worker = await createWorker('fra');
+                  for (let i = 1; i <= numPages; i++) {
+                    const page = await pdf.getPage(i);
+                    const viewport = page.getViewport({ scale: 2 });
+                    const canvas = document.createElement('canvas');
+                    canvas.width = viewport.width;
+                    canvas.height = viewport.height;
+                    const ctx = canvas.getContext('2d');
+                    if (ctx) {
+                      await page.render({ canvasContext: ctx, viewport }).promise;
+                      const { data: { text } } = await worker.recognize(canvas);
+                      fullText += text + '\n';
+                    }
+                  }
+                  await worker.terminate();
+
+                  // Parse transactions from OCR text
+                  const lines = fullText.split('\n');
+                  const transactions: Array<{ transactionNumber: string; transactionDate: string; label: string; amount: number }> = [];
+
+                  for (const line of lines) {
+                    // Common CB statement patterns:
+                    // DD/MM/YYYY  LABEL  AMOUNT  TX_NUMBER
+                    // or: TX_NUMBER  DD/MM/YYYY  LABEL  AMOUNT
+                    const dateMatch = line.match(/(\d{2}[/.-]\d{2}[/.-]\d{4})/);
+                    const amountMatch = line.match(/(\d[\d\s]*[.,]\d{2})\s*€?/);
+                    // Transaction number: sequence of digits (usually 6+ digits)
+                    const txMatch = line.match(/\b(\d{6,})\b/);
+
+                    if (dateMatch && amountMatch) {
+                      const dateParts = dateMatch[1].split(/[/.-]/);
+                      const isoDate = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
+                      const amount = parseFloat(amountMatch[1].replace(/\s/g, '').replace(',', '.'));
+                      const txNumber = txMatch?.[1] || `CB-${isoDate}-${amount.toFixed(2)}`;
+
+                      // Extract label: remove date, amount, and tx number from line
+                      let label = line
+                        .replace(dateMatch[0], '')
+                        .replace(amountMatch[0], '')
+                        .replace(txMatch?.[0] || '', '')
+                        .trim()
+                        .replace(/\s+/g, ' ')
+                        .substring(0, 200);
+
+                      if (!label) label = 'Transaction CB';
+                      if (amount > 0) {
+                        transactions.push({
+                          transactionNumber: txNumber,
+                          transactionDate: isoDate,
+                          label,
+                          amount,
+                        });
+                      }
+                    }
+                  }
+
+                  setCbParsedTx(transactions);
+                } catch (err) {
+                  console.error('CB PDF parse error:', err);
+                  alert('Erreur lors de la lecture du PDF');
+                }
+                setCbParsing(false);
+              }}
+              className="w-full px-3 py-2 border border-gray-300 rounded text-sm"
+            />
+          </div>
+
+          {cbParsing && (
+            <div className="text-center py-4 text-sm text-gray-500">
+              ⏳ Analyse du PDF en cours...
+            </div>
+          )}
+
+          {cbParsedTx.length > 0 && (
+            <div className="mb-3">
+              <h4 className="text-sm font-semibold mb-2">{cbParsedTx.length} transaction(s) détectée(s)</h4>
+              <div className="max-h-60 overflow-y-auto">
+                <table className="w-full text-xs border-collapse">
+                  <thead>
+                    <tr className="bg-gray-100">
+                      <th className="p-2 text-left">Date</th>
+                      <th className="p-2 text-left">Libellé</th>
+                      <th className="p-2 text-right">Montant</th>
+                      <th className="p-2 text-left">N° Transaction</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    {cbParsedTx.map((tx, i) => (
+                      <tr key={i} className="border-b border-gray-100">
+                        <td className="p-2">{tx.transactionDate}</td>
+                        <td className="p-2">{tx.label}</td>
+                        <td className="p-2 text-right font-semibold">{tx.amount.toFixed(2)} €</td>
+                        <td className="p-2 text-gray-400 text-xs">{tx.transactionNumber}</td>
+                      </tr>
+                    ))}
+                  </tbody>
+                </table>
+              </div>
+              <div className="mt-2 text-sm font-semibold">
+                Total : {formatCurrency(cbParsedTx.reduce((s, t) => s + t.amount, 0))}
+              </div>
+            </div>
+          )}
+
+          {cbImportResult && (
+            <div className="mb-3 p-3 bg-green-50 rounded text-sm text-green-700">
+              ✅ {cbImportResult.imported} transaction(s) importée(s)
+              {cbImportResult.duplicates > 0 && ` — ${cbImportResult.duplicates} doublon(s) ignoré(s)`}
+            </div>
+          )}
+
+          {cbParsedTx.length > 0 && !cbImportResult && (
+            <button
+              onClick={async () => {
+                if (!cbEntityId) {
+                  alert('Sélectionnez une entité');
+                  return;
+                }
+                try {
+                  const res = await fetch('/api/card-transactions', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ transactions: cbParsedTx, entityId: cbEntityId }),
+                  });
+                  if (res.ok) {
+                    const json = await res.json();
+                    setCbImportResult(json.meta);
+                    fetchDisbursements();
+                  }
+                } catch {
+                  alert('Erreur lors de l\'import');
+                }
+              }}
+              className="w-full px-4 py-2.5 bg-blue-600 text-white rounded text-sm font-semibold hover:bg-blue-700 transition-colors"
+            >
+              💳 Importer {cbParsedTx.length} transaction(s)
+            </button>
+          )}
+        </div>
       </Modal>
     </>
   );

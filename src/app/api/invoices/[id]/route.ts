@@ -34,6 +34,9 @@ export async function PUT(
       siteRef,
       amountHt,
       amountTtc,
+      amountCee,
+      ceeDelegataire,
+      resteAPayer,
       issueDate,
       dueDate,
       paymentMethod,
@@ -61,6 +64,9 @@ export async function PUT(
     if (siteRef !== undefined) data.siteRef = siteRef || null;
     if (amountHt !== undefined) data.amountHt = amountHt ?? null;
     if (amountTtc !== undefined) data.amountTtc = amountTtc;
+    if (amountCee !== undefined) data.amountCee = amountCee ?? null;
+    if (ceeDelegataire !== undefined) data.ceeDelegataire = ceeDelegataire || null;
+    if (resteAPayer !== undefined) data.resteAPayer = resteAPayer ?? null;
     if (issueDate !== undefined) data.issueDate = new Date(issueDate);
     if (dueDate !== undefined) data.dueDate = dueDate ? new Date(dueDate) : null;
     if (paymentMethod !== undefined) data.paymentMethod = paymentMethod || null;

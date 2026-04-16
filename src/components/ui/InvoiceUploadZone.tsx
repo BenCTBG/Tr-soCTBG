@@ -6,6 +6,7 @@ import { createWorker } from 'tesseract.js';
 interface EntityData {
   id: string;
   name: string;
+  code?: string;
 }
 
 export interface ExtractedFields {
@@ -16,6 +17,8 @@ export interface ExtractedFields {
   datePaiement?: string;
   montantHT?: string;
   montantTTC?: string;
+  montantCEE?: string;
+  resteAPayer?: string;
   invoiceNumber?: string;
   paymentMethod?: string;
   paymentTerms?: string;
@@ -79,13 +82,19 @@ function parseOCRText(text: string, entities: EntityData[], fileName?: string): 
   const result: ExtractedFields = {};
 
   // ============================================
-  // 1. FOURNISSEUR — primarily from filename
+  // 1. FOURNISSEUR / CLIENT — primarily from filename
   // ============================================
   if (fileName) {
-    const fromFile = extractSupplierFromFilename(fileName);
-    if (fromFile) {
-      result.fournisseur = fromFile;
-      result.client = fromFile;
+    // CTBG invoice filename pattern: "REN_F_PXL-EP-2023-0653-_PERRIN+ARMAND.pdf"
+    const ctbgFileMatch = fileName.match(/(?:REN|FAC|F)_F_[\w-]+_([A-ZÀ-Ü][A-ZÀ-Ü+\s'-]+?)(?:\.\w+)+$/i);
+    if (ctbgFileMatch) {
+      result.client = ctbgFileMatch[1].replace(/\+/g, ' ').trim();
+    } else {
+      const fromFile = extractSupplierFromFilename(fileName);
+      if (fromFile) {
+        result.fournisseur = fromFile;
+        result.client = fromFile;
+      }
     }
   }
 
@@ -107,17 +116,69 @@ function parseOCRText(text: string, entities: EntityData[], fileName?: string): 
   // ============================================
   // 2. ENTITÉ FACTURÉE
   // ============================================
-  // Try exact entity name match
-  for (const ent of entities) {
-    if (fullText.includes(ent.name.toUpperCase())) {
-      result.entityId = ent.id;
-      break;
+  // Helper: find entity by code or by name (fuzzy — ignores trailing punctuation)
+  const findEntity = (search: string): string | undefined => {
+    const s = search.toUpperCase().replace(/[^A-Z0-9 ]/g, '').trim();
+    // Match by code first
+    const byCode = entities.find((e) => e.code?.toUpperCase().replace(/[^A-Z0-9]/g, '') === s.replace(/ /g, ''));
+    if (byCode) return byCode.id;
+    // Match by name (strip punctuation on both sides)
+    const byName = entities.find((e) => e.name.toUpperCase().replace(/[^A-Z0-9 ]/g, '').trim() === s);
+    if (byName) return byName.id;
+    // Partial: search is contained in entity name or vice versa
+    const byPartial = entities.find((e) => {
+      const eName = e.name.toUpperCase().replace(/[^A-Z0-9 ]/g, '').trim();
+      return eName.includes(s) || s.includes(eName);
+    });
+    return byPartial?.id;
+  };
+
+  // Priority 1: Extract entity from filename prefix (PXL-XX code)
+  // e.g. REN_F_PXL-HR-2025-0512_NAME.pdf → HR → CTBG HOME RENOV
+  if (fileName) {
+    const prefixMatch = fileName.match(/PXL-([A-Z]{2})-/i);
+    if (prefixMatch) {
+      const prefixCode = prefixMatch[1].toUpperCase();
+      const prefixToSearch: Record<string, string[]> = {
+        'HR': ['CTBG_HOME_RENOV', 'CTBG HOME RENOV', 'CTBG HR'],
+        'EP': ['CTBG_EP', 'CTBG EP', 'CTBG ENERGY PERFORMANCE'],
+        'VH': ['CVH', 'VITAL HOMES', 'VITALHOMES'],
+        'PR': ['CTBG_PREMIUM', 'CTBG PREMIUM'],
+        'GR': ['CTBG_GROUPE', 'CTBG GROUPE'],
+        'DO': ['DOMOS_ENERGIE', 'DOMOS ENERGIE', 'DOMOS'],
+      };
+      const searches = prefixToSearch[prefixCode];
+      if (searches) {
+        for (const s of searches) {
+          const id = findEntity(s);
+          if (id) { result.entityId = id; break; }
+        }
+      }
+    }
+  }
+
+  // Priority 2: Match entity from footer/header (émetteur, not sous-traitant)
+  if (!result.entityId) {
+    const footerMatch = text.match(/^(CTBG\s+\w[\w\s]*?)\s*-\s*Soci[eé]t[eé]/im);
+    if (footerMatch) {
+      const id = findEntity(footerMatch[1].trim());
+      if (id) result.entityId = id;
+    }
+  }
+
+  // Priority 3: Try exact entity name match in text
+  if (!result.entityId) {
+    for (const ent of entities) {
+      if (fullText.includes(ent.name.toUpperCase().replace(/[^A-Z0-9 ]/g, '').trim())) {
+        result.entityId = ent.id;
+        break;
+      }
     }
   }
   // Try partial match (all words of entity name present)
   if (!result.entityId) {
     for (const ent of entities) {
-      const words = ent.name.toUpperCase().split(/\s+/);
+      const words = ent.name.toUpperCase().replace(/[^A-Z0-9 ]/g, '').trim().split(/\s+/);
       if (words.length > 1 && words.every((w) => fullText.includes(w))) {
         result.entityId = ent.id;
         break;
@@ -127,17 +188,17 @@ function parseOCRText(text: string, entities: EntityData[], fileName?: string): 
   // Try abbreviations from OCR text
   if (!result.entityId) {
     const abbrevMap: [RegExp, string][] = [
+      [/HOME\s*RENOV/i, 'CTBG HOME RENOV'],
       [/ENERGY\s*PERFORMANCE|CTBG\s*EP\b/i, 'CTBG EP'],
       [/CTBG\s*PREMIUM/i, 'CTBG PREMIUM'],
       [/CTBG\s*GROUPE/i, 'CTBG GROUPE'],
-      [/HOME\s*RENOV/i, "CTBG HOME RENOV'"],
-      [/\bCVH\b/i, 'CVH'],
+      [/\bCVH\b|VITAL\s*HOMES|VITALHOMES/i, 'CVH'],
       [/DOMOS/i, 'DOMOS ENERGIE'],
     ];
     for (const [pattern, entName] of abbrevMap) {
       if (pattern.test(text)) {
-        const found = entities.find((e) => e.name.toUpperCase() === entName.toUpperCase());
-        if (found) { result.entityId = found.id; break; }
+        const id = findEntity(entName);
+        if (id) { result.entityId = id; break; }
       }
     }
   }
@@ -147,7 +208,7 @@ function parseOCRText(text: string, entities: EntityData[], fileName?: string): 
   // ============================================
   // Try structured patterns first
   const facPatterns = [
-    /FACTURE\s*:\s*([A-Z]{1,3}-?\d[\w\-]{3,})/i,          // "FACTURE : FC-21055254"
+    /FACTURE\s*:\s*([A-Z][\w\-]{3,})/i,                    // "FACTURE : VIT-FACT-0004", "FACTURE : CEP-2023-23-"
     /facture\s*n[°o]?\s*:?\s*([A-Z0-9][\w\-\/]{2,})/i,
     /facture\s*n[°o]?\s+([A-Z0-9][\w\-\/]{2,})/i,
     /facture[_\s]+([A-Z0-9][\w\-\/]{2,})/i,
@@ -163,15 +224,23 @@ function parseOCRText(text: string, entities: EntityData[], fileName?: string): 
   // 3b. DÉTECTION FACTURE CTBG (encaissement)
   // ============================================
   // If the invoice is FROM a CTBG entity (emitted by CTBG), extract client info
-  const isCTBGInvoice = /CTBG\s*(HOME\s*RENOV|EP|PREMIUM|GROUPE)/i.test(text)
-    && (/FACTURE\s*:?\s*FC[-\s]?\d/i.test(text) || /S\.?A\.?R\.?L|SIRE?T?\s*:?\s*504\s*382/i.test(text));
+  const isCTBGInvoice = (
+    /CTBG\s*(HOME\s*RENOV|EP|PREMIUM|GROUPE|ENERGY\s*PERFORMANCE)/i.test(text)
+    || /VITAL\s*HOMES|VITALHOMES/i.test(text)
+  ) && (
+    /FACTURE\s*:?\s*(?:FC|CEP|CHP|CGP|CVH|DOM|VIT)[-\s]?\w/i.test(text)
+    || /SIRE?T?\s*:?\s*(?:504\s*382|533\s*019|504\s*438|539\s*844|932\s*913)/i.test(text)
+    || /CTBG\s*ENERGY\s*PERFORMANCE/i.test(text)
+  );
 
   if (isCTBGInvoice) {
     // Extract client name — look for "M." or "Mme" or "Mr" followed by name
     const clientPatterns = [
-      // "FACTURE : FC-21055254 M. NICOLAS PATRICK"
-      /FACTURE\s*:?\s*FC[-\s]?\d+\s+(?:M\.|Mme|Mr|Monsieur|Madame)\s*(.+)/i,
-      // "M. NICOLAS PATRICK" standalone
+      // "FACTURE : CEP-2023-23- M. PERRIN ARMAND" or "FACTURE : FC-21055254 M. NICOLAS PATRICK"
+      /FACTURE\s*:?\s*(?:FC|CEP|CHP|CGP|CVH|DOM)[-\w]*\s+(?:M\.|Mme|Mr|Monsieur|Madame)\s*(.+)/i,
+      // "M. PERRIN ARMAND" on same line after facture number (any format)
+      /FACTURE\s*:?\s*[\w\-]+\s+(?:M\.|Mme|Mr|Monsieur|Madame)\s*(.+)/i,
+      // "M. NICOLAS PATRICK" standalone line
       /(?:^|\n)\s*(?:M\.|Mme|Mr|Monsieur|Madame)\s+([A-ZÀÂÄÉÈÊËÏÎÔÙÛÜŸÇ][A-ZÀÂÄÉÈÊËÏÎÔÙÛÜŸÇa-zàâäéèêëïîôùûüÿç\s]+)/m,
       // "Client : NICOLAS PATRICK"
       /Client\s*:\s*(?:M\.|Mme|Mr|Monsieur|Madame)?\s*([A-ZÀÂÄÉÈÊËÏÎÔÙÛÜŸÇ][A-ZÀÂÄÉÈÊËÏÎÔÙÛÜŸÇa-zàâäéèêëïîôùûüÿç\s]+)/i,
@@ -199,6 +268,8 @@ function parseOCRText(text: string, entities: EntityData[], fileName?: string): 
       const m = text.match(p);
       if (m) {
         let addr = m[1].trim().split('\n')[0].trim();
+        // Stop before noise fields like "Précarité", "Type de", "Zone", "Tél", "E-mail"
+        addr = addr.replace(/\s*(?:Pr[ée]carit[ée]|Type\s*de|Zone\s*:|T[ée]l\s*:|E-?mail).*$/i, '').trim();
         if (addr.length > 3) {
           result.siteAddress = addr;
           break;
@@ -212,8 +283,8 @@ function parseOCRText(text: string, entities: EntityData[], fileName?: string): 
     let postalMatch;
     while ((postalMatch = postalRegex.exec(text)) !== null) {
       const postal = postalMatch[1];
-      // Skip CTBG's own postal codes (91350 GRIGNY, 91000, etc.)
-      if (!postal.startsWith('913') && !postal.startsWith('910')) {
+      // Skip only CTBG HQ postal code (91350 GRIGNY)
+      if (postal !== '91350') {
         result.department = postal.substring(0, 2);
         // If no site address found yet, try to grab address from surrounding context
         if (!result.siteAddress) {
@@ -305,7 +376,6 @@ function parseOCRText(text: string, entities: EntityData[], fileName?: string): 
     new RegExp(`TOTAL\\s*TTC${amtGap}${amtCapture}\\s*[€]?`, 'i'),
     new RegExp(`MONTANT\\s*TOTAL\\s*TTC${amtGap}${amtCapture}\\s*[€]?`, 'i'),
     new RegExp(`NET\\s*[ÀAa]\\s*PAYER${amtGap}${amtCapture}\\s*[€]?`, 'i'),
-    new RegExp(`RESTE\\s*[ÀAa]\\s*PAYER${amtGap}${amtCapture}\\s*[€]?`, 'i'),
     new RegExp(`T\\.?T\\.?C\\.?${amtGap}${amtCapture}\\s*[€]?`, 'i'),
     new RegExp(`\\*+${amtCapture}\\s*EUR`, 'i'), // ******654,00EUR (Axdis format)
   ];
@@ -336,6 +406,51 @@ function parseOCRText(text: string, entities: EntityData[], fileName?: string): 
         result.montantHT = val.toFixed(2);
         break;
       }
+    }
+  }
+
+  // ============================================
+  // 5b. CEE + RESTE À PAYER
+  // ============================================
+  const ceePatterns = [
+    new RegExp(`Prime\\s*(?:Certificat)?\\s*(?:d['']?)?\\s*[EÉé]conomie\\s*d['']?[EÉé]nergie${amtGap}-?\\s*${amtCapture}\\s*[€]?`, 'i'),
+    new RegExp(`(?:Prime|Montant)\\s*CEE${amtGap}-?\\s*${amtCapture}\\s*[€]?`, 'i'),
+    new RegExp(`CEE\\s*:?${amtGap}-?\\s*${amtCapture}\\s*[€]?`, 'i'),
+    new RegExp(`D[ée]duction\\s*CEE${amtGap}-?\\s*${amtCapture}\\s*[€]?`, 'i'),
+  ];
+  for (const pattern of ceePatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const val = parseAmount(match[1]);
+      if (val && val > 0) {
+        result.montantCEE = val.toFixed(2);
+        break;
+      }
+    }
+  }
+
+  const rapPatterns = [
+    new RegExp(`Reste\\s*[àa]\\s*payer${amtGap}${amtCapture}\\s*[€]?`, 'i'),
+    new RegExp(`Net\\s*[àa]\\s*payer\\s*(?:client)?${amtGap}${amtCapture}\\s*[€]?`, 'i'),
+    new RegExp(`Solde\\s*[àa]\\s*(?:la\\s*)?charge\\s*(?:du\\s*)?client${amtGap}${amtCapture}\\s*[€]?`, 'i'),
+  ];
+  for (const pattern of rapPatterns) {
+    const match = text.match(pattern);
+    if (match) {
+      const val = parseAmount(match[1]);
+      if (val !== null) {
+        result.resteAPayer = val.toFixed(2);
+        break;
+      }
+    }
+  }
+
+  // If we have TTC and CEE but no reste à payer, calculate it
+  if (result.montantTTC && result.montantCEE && !result.resteAPayer) {
+    const ttc = parseFloat(result.montantTTC);
+    const cee = parseFloat(result.montantCEE);
+    if (!isNaN(ttc) && !isNaN(cee)) {
+      result.resteAPayer = Math.max(0, ttc - cee).toFixed(2);
     }
   }
 
@@ -380,18 +495,29 @@ function parseOCRText(text: string, entities: EntityData[], fileName?: string): 
   // ============================================
 
   // Detect payment method
-  if (/CARTE\s*BANCAIRE|PAIEMENT\s*CB|\bCB\b|CARTE\s*BLEUE/i.test(text)) {
-    result.paymentMethod = 'CB';
-  } else if (/VIREMENT\s*(?:SEPA|BANCAIRE)?|MODE\s*DE\s*PAIEMENT\s*:?\s*VIREMENT/i.test(text)) {
-    result.paymentMethod = 'VIREMENT';
-  } else if (/\bLCR\b|LCR[\s-]?NA|LETTRE\s*DE\s*CHANGE|TRAITE\s*(?:DOMICILI[ÉE]E)?/i.test(text)) {
-    result.paymentMethod = 'LCR';
-  } else if (/CH[ÈE]QUE\s*(?:[ÀA]\s*\d+\s*JOURS)?/i.test(text)) {
-    result.paymentMethod = 'CHEQUE';
-  } else if (/PR[ÉE]L[ÈE]VEMENT/i.test(text)) {
-    result.paymentMethod = 'PRELEVEMENT';
-  } else if (/COMPTANT|REGLEMENT\s*COMPTANT/i.test(text)) {
-    result.paymentMethod = 'CB';
+  // Detect from "Mode de paiement : Chèques, virement ou espèce"
+  const modeMatch = text.match(/Mode\s*de\s*paiement\s*:\s*(.+)/i);
+  if (modeMatch) {
+    const modeTxt = modeMatch[1].toLowerCase();
+    if (/virement/i.test(modeTxt)) result.paymentMethod = 'VIREMENT';
+    else if (/ch[èe]que/i.test(modeTxt)) result.paymentMethod = 'CHEQUE';
+    else if (/esp[èe]ce/i.test(modeTxt)) result.paymentMethod = 'VIREMENT'; // default
+  }
+
+  if (!result.paymentMethod) {
+    if (/CARTE\s*BANCAIRE|PAIEMENT\s*CB|\bCB\b|CARTE\s*BLEUE/i.test(text)) {
+      result.paymentMethod = 'CB';
+    } else if (/VIREMENT\s*(?:SEPA|BANCAIRE)?/i.test(text)) {
+      result.paymentMethod = 'VIREMENT';
+    } else if (/\bLCR\b|LCR[\s-]?NA|LETTRE\s*DE\s*CHANGE|TRAITE\s*(?:DOMICILI[ÉE]E)?/i.test(text)) {
+      result.paymentMethod = 'LCR';
+    } else if (/CH[ÈE]QUE\s*(?:[ÀA]\s*\d+\s*JOURS)?/i.test(text)) {
+      result.paymentMethod = 'CHEQUE';
+    } else if (/PR[ÉE]L[ÈE]VEMENT/i.test(text)) {
+      result.paymentMethod = 'PRELEVEMENT';
+    } else if (/COMPTANT|REGLEMENT\s*COMPTANT/i.test(text)) {
+      result.paymentMethod = 'CB';
+    }
   }
 
   // Detect payment terms and calculate due date
@@ -521,7 +647,8 @@ export default function InvoiceUploadZone({ entities, onExtracted, onFileUploade
     });
   }, []);
 
-  // Convert a File to a usable image source for Tesseract
+  // Convert a File to usable image source(s) for Tesseract
+  // For PDFs: renders ALL pages and combines them into one tall canvas
   const fileToImageSource = useCallback(async (file: File): Promise<string> => {
     const isPDF = file.type === 'application/pdf' || file.name.toLowerCase().endsWith('.pdf');
 
@@ -531,16 +658,35 @@ export default function InvoiceUploadZone({ entities, onExtracted, onFileUploade
 
       const arrayBuffer = await file.arrayBuffer();
       const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-      const page = await pdf.getPage(1);
-      const viewport = page.getViewport({ scale: 2.0 });
+      const numPages = Math.min(pdf.numPages, 8); // Max 8 pages
 
-      const canvas = document.createElement('canvas');
-      canvas.width = viewport.width;
-      canvas.height = viewport.height;
-      const ctx = canvas.getContext('2d')!;
-      await page.render({ canvasContext: ctx, viewport }).promise;
+      // Render each page to a canvas
+      const pageCanvases: HTMLCanvasElement[] = [];
+      for (let i = 1; i <= numPages; i++) {
+        const page = await pdf.getPage(i);
+        const viewport = page.getViewport({ scale: 2.0 });
+        const canvas = document.createElement('canvas');
+        canvas.width = viewport.width;
+        canvas.height = viewport.height;
+        const ctx = canvas.getContext('2d')!;
+        await page.render({ canvasContext: ctx, viewport }).promise;
+        pageCanvases.push(canvas);
+      }
 
-      return canvas.toDataURL('image/png');
+      // Combine all pages into one tall canvas
+      const totalHeight = pageCanvases.reduce((h, c) => h + c.height, 0);
+      const maxWidth = Math.max(...pageCanvases.map((c) => c.width));
+      const combined = document.createElement('canvas');
+      combined.width = maxWidth;
+      combined.height = totalHeight;
+      const ctx = combined.getContext('2d')!;
+      let yOffset = 0;
+      for (const pc of pageCanvases) {
+        ctx.drawImage(pc, 0, yOffset);
+        yOffset += pc.height;
+      }
+
+      return combined.toDataURL('image/png');
     } else {
       // For images, convert to data URL
       return new Promise((resolve, reject) => {
