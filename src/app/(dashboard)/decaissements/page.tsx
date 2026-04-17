@@ -523,10 +523,9 @@ export default function DecaissementsPage() {
                     const buf = await file.arrayBuffer();
                     const wb = XLSX.read(buf, { type: 'array', cellDates: true });
                     const sheet = wb.Sheets[wb.SheetNames[0]];
-                    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
 
                     const parseDate = (v: unknown): string => {
-                      if (!v) return '';
+                      if (!v && v !== 0) return '';
                       if (v instanceof Date) {
                         const d = v.getDate().toString().padStart(2, '0');
                         const m = (v.getMonth() + 1).toString().padStart(2, '0');
@@ -538,6 +537,13 @@ export default function DecaissementsPage() {
                       if (fr) return `${fr[3]}-${fr[2].padStart(2, '0')}-${fr[1].padStart(2, '0')}`;
                       // AAAA-MM-JJ
                       if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+                      // DDMMYY (format compta : 130426 = 13/04/2026)
+                      const compta = s.match(/^(\d{2})(\d{2})(\d{2})$/) || (typeof v === 'number' ? String(v).padStart(6, '0').match(/^(\d{2})(\d{2})(\d{2})$/) : null);
+                      if (compta) {
+                        const dd = compta[1], mm = compta[2], yy = compta[3];
+                        const year = parseInt(yy) > 70 ? `19${yy}` : `20${yy}`;
+                        return `${year}-${mm}-${dd}`;
+                      }
                       return s;
                     };
 
@@ -548,36 +554,65 @@ export default function DecaissementsPage() {
                       return isNaN(n) ? 0 : Math.abs(n);
                     };
 
-                    const parsed = rows
-                      .filter((r) => {
-                        const firstVal = String(Object.values(r)[0] ?? '');
-                        return firstVal && !firstVal.toLowerCase().includes('exemple');
-                      })
-                      .map((r, i) => {
-                        // Find columns flexibly (case-insensitive, tolerant)
-                        const get = (keywords: string[]): unknown => {
-                          for (const k of Object.keys(r)) {
-                            const kl = k.toLowerCase();
-                            if (keywords.some((w) => kl.includes(w))) return r[k];
-                          }
-                          return '';
-                        };
-                        const date = parseDate(get(['date']));
-                        const label = String(get(['libell', 'label', 'desc']) || '').trim();
-                        const amount = parseAmount(get(['montant', 'amount']));
-                        const txNum = String(get(['transaction', 'ref', 'num']) || '').trim()
-                          || `${date}-${label}-${amount}-${i}`;
-                        return {
-                          transactionNumber: txNum,
-                          transactionDate: date,
-                          label,
-                          amount,
-                        };
-                      })
-                      .filter((tx) => tx.transactionDate && tx.label && tx.amount > 0);
+                    // Essaie d'abord le format avec en-têtes
+                    const withHeaders = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
+                    const hasHeaders = withHeaders.length > 0 && Object.keys(withHeaders[0]).some((k) => {
+                      const kl = k.toLowerCase();
+                      return kl.includes('date') || kl.includes('libell') || kl.includes('montant') || kl.includes('label');
+                    });
+
+                    let parsed: Array<{ transactionNumber: string; transactionDate: string; label: string; amount: number; cardLast4?: string }> = [];
+
+                    if (hasHeaders) {
+                      parsed = withHeaders
+                        .filter((r) => {
+                          const firstVal = String(Object.values(r)[0] ?? '');
+                          return firstVal && !firstVal.toLowerCase().includes('exemple');
+                        })
+                        .map((r, i) => {
+                          const get = (keywords: string[]): unknown => {
+                            for (const k of Object.keys(r)) {
+                              const kl = k.toLowerCase();
+                              if (keywords.some((w) => kl.includes(w))) return r[k];
+                            }
+                            return '';
+                          };
+                          const date = parseDate(get(['date']));
+                          const label = String(get(['libell', 'label', 'desc']) || '').trim();
+                          const amount = parseAmount(get(['montant', 'amount']));
+                          const txNum = String(get(['transaction', 'ref', 'num']) || '').trim()
+                            || `${date}-${label}-${amount}-${i}`;
+                          return { transactionNumber: txNum, transactionDate: date, label, amount };
+                        })
+                        .filter((tx) => tx.transactionDate && tx.label && tx.amount > 0);
+                    } else {
+                      // Format sans en-tête (export compta CTBG)
+                      // Colonnes : 0=n°, 1=code bq, 2=date DDMMYY, 5=CBxxxx, 8=libellé, 11=montant
+                      const rows = XLSX.utils.sheet_to_json<unknown[]>(sheet, { header: 1, defval: '' });
+                      parsed = rows
+                        .map((row, i) => {
+                          const date = parseDate(row[2]);
+                          const cardCode = String(row[5] || '').trim();
+                          const label = String(row[8] || '').trim();
+                          const amount = parseAmount(row[11]);
+                          const cardLast4 = cardCode.match(/CB\s*(\d{4})/i)?.[1];
+                          const txNum = `${date}-${label}-${amount}-${cardCode}-${i}`;
+                          return { transactionNumber: txNum, transactionDate: date, label, amount, cardLast4 };
+                        })
+                        .filter((tx) => tx.transactionDate && tx.label && tx.amount > 0);
+
+                      // Dédoublonnage local (lignes identiques dans l'export)
+                      const seen = new Set<string>();
+                      parsed = parsed.filter((tx) => {
+                        const key = `${tx.transactionDate}|${tx.label}|${tx.amount}|${tx.cardLast4 || ''}`;
+                        if (seen.has(key)) return false;
+                        seen.add(key);
+                        return true;
+                      });
+                    }
 
                     if (parsed.length === 0) {
-                      alert('Aucune transaction valide trouvée dans le fichier. Vérifiez les colonnes Date, Libellé, Montant.');
+                      alert('Aucune transaction valide trouvée dans le fichier.');
                     } else {
                       setCbParsedTx(parsed);
                     }
