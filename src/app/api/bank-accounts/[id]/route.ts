@@ -77,9 +77,9 @@ export async function DELETE(
     );
   }
 
-  if (!checkAccess(session.user.role, 'BANK_POSITION', 'UPDATE')) {
+  if (session.user.role !== 'ADMIN') {
     return Response.json(
-      { error: { code: 'FORBIDDEN', message: 'Acces refuse' } },
+      { error: { code: 'FORBIDDEN', message: 'Seuls les administrateurs peuvent supprimer un compte bancaire' } },
       { status: 403 }
     );
   }
@@ -95,22 +95,18 @@ export async function DELETE(
       );
     }
 
-    const bankAccount = await prisma.bankAccount.update({
-      where: { id },
-      data: { active: false },
-      include: { entity: true },
-    });
+    await prisma.bankAccount.delete({ where: { id } });
 
     await prisma.auditLog.create({
       data: {
         userId: session.user.id,
-        action: 'UPDATE',
+        action: 'DELETE',
         module: 'BANK_POSITION',
-        details: { bankAccountId: id, action: 'DEACTIVATE' },
+        details: { bankAccountId: id, bankName: existing.bankName, action: 'DELETE' },
       },
     });
 
-    return Response.json({ data: bankAccount });
+    return Response.json({ data: { success: true } });
   } catch {
     return Response.json(
       { error: { code: 'INTERNAL_ERROR', message: 'Erreur serveur' } },

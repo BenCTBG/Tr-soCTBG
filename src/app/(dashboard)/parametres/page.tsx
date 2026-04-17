@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useSession } from 'next-auth/react';
 import StatusBadge from '@/components/ui/StatusBadge';
 import Modal from '@/components/ui/Modal';
 import FormField from '@/components/ui/FormField';
@@ -67,6 +68,8 @@ const emptyBankAccountForm = {
 };
 
 export default function ParametresPage() {
+  const { data: session } = useSession();
+  const isAdmin = session?.user?.role === 'ADMIN';
   const [activeTab, setActiveTab] = useState<'utilisateurs' | 'entites' | 'comptes'>('utilisateurs');
 
   // Users state
@@ -272,6 +275,23 @@ export default function ParametresPage() {
       }
     } catch {
       // silent
+    }
+  };
+
+  const handleDeleteBankAccount = async () => {
+    if (!editingBankAccountId) return;
+    if (!confirm('Supprimer definitivement ce compte bancaire ?')) return;
+    try {
+      const res = await fetch(`/api/bank-accounts/${editingBankAccountId}`, { method: 'DELETE' });
+      if (res.ok) {
+        closeBankAccountModal();
+        fetchBankAccounts();
+      } else {
+        const json = await res.json();
+        alert(json.error?.message || 'Erreur lors de la suppression');
+      }
+    } catch {
+      alert('Erreur lors de la suppression');
     }
   };
 
@@ -526,6 +546,15 @@ export default function ParametresPage() {
                 <button type="button" onClick={closeBankAccountModal} className="px-4 py-2.5 bg-gray-light text-gray-dark border border-gray-border rounded-md text-sm font-semibold">
                   Annuler
                 </button>
+                {isEditingBankAccount && isAdmin && (
+                  <button
+                    type="button"
+                    onClick={handleDeleteBankAccount}
+                    className="px-4 py-2.5 bg-red-600 text-white border-none rounded-md text-sm font-semibold uppercase tracking-wide hover:bg-red-700 ml-auto"
+                  >
+                    Supprimer
+                  </button>
+                )}
               </div>
             </form>
           </Modal>

@@ -130,6 +130,24 @@ export async function GET(request: Request) {
         '',
       ],
     },
+    cb: {
+      sheetName: 'Releve CB',
+      fileName: 'modele_import_releve_cb.xlsx',
+      headers: [
+        'Date* (JJ/MM/AAAA)',
+        'Libellé*',
+        'Montant*',
+        'N° Transaction (unique pour éviter doublons)',
+        '4 derniers chiffres carte',
+      ],
+      example: [
+        '14/04/2026',
+        'LEROY MERLIN GRIGNY',
+        125.50,
+        '202604140001',
+        '1234',
+      ],
+    },
   };
 
   const tpl = templates[type];

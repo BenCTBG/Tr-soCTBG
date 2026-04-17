@@ -476,9 +476,19 @@ export default function DecaissementsPage() {
       <Modal isOpen={cbModalOpen} onClose={() => { setCbModalOpen(false); setCbParsedTx([]); setCbImportResult(null); }} title="Import Relevé Carte Bleue">
         <div className="mb-4">
           <p className="text-xs text-gray-500 mb-3">
-            Importez un relevé CB au format PDF. Les transactions seront extraites automatiquement.
+            Importez un relevé CB au format <strong>Excel (.xlsx / .csv)</strong> ou <strong>PDF</strong>.
             Les doublons (même n° de transaction) seront ignorés.
           </p>
+
+          <div className="mb-3 flex gap-2">
+            <a
+              href="/api/import-template?type=cb"
+              download
+              className="inline-block px-3 py-1.5 bg-gray-100 text-gray-700 border border-gray-300 rounded text-xs font-medium hover:bg-gray-200"
+            >
+              📥 Télécharger le modèle Excel
+            </a>
+          </div>
 
           <div className="mb-3">
             <label className="block text-xs font-medium text-gray-600 mb-1">Entité *</label>
@@ -495,91 +505,97 @@ export default function DecaissementsPage() {
           </div>
 
           <div className="mb-3">
-            <label className="block text-xs font-medium text-gray-600 mb-1">Fichier PDF du relevé</label>
+            <label className="block text-xs font-medium text-gray-600 mb-1">Fichier (Excel ou PDF)</label>
             <input
               type="file"
-              accept=".pdf"
+              accept=".pdf,.xlsx,.xls,.csv"
               onChange={async (e) => {
                 const file = e.target.files?.[0];
                 if (!file) return;
                 setCbParsing(true);
                 setCbImportResult(null);
                 try {
-                  // Use OCR to extract text from PDF
-                  const { createWorker } = await import('tesseract.js');
-                  const pdfjsLib = (window as any).pdfjsLib;
-                  if (!pdfjsLib) {
-                    alert('pdf.js non chargé');
-                    setCbParsing(false);
-                    return;
-                  }
+                  const ext = file.name.split('.').pop()?.toLowerCase();
 
-                  const arrayBuffer = await file.arrayBuffer();
-                  const pdf = await pdfjsLib.getDocument({ data: arrayBuffer }).promise;
-                  const numPages = Math.min(pdf.numPages, 10);
+                  if (ext === 'xlsx' || ext === 'xls' || ext === 'csv') {
+                    // Excel / CSV parsing client-side
+                    const XLSX = await import('xlsx');
+                    const buf = await file.arrayBuffer();
+                    const wb = XLSX.read(buf, { type: 'array', cellDates: true });
+                    const sheet = wb.Sheets[wb.SheetNames[0]];
+                    const rows = XLSX.utils.sheet_to_json<Record<string, unknown>>(sheet, { defval: '' });
 
-                  let fullText = '';
-                  // Render each page and OCR
-                  const worker = await createWorker('fra');
-                  for (let i = 1; i <= numPages; i++) {
-                    const page = await pdf.getPage(i);
-                    const viewport = page.getViewport({ scale: 2 });
-                    const canvas = document.createElement('canvas');
-                    canvas.width = viewport.width;
-                    canvas.height = viewport.height;
-                    const ctx = canvas.getContext('2d');
-                    if (ctx) {
-                      await page.render({ canvasContext: ctx, viewport }).promise;
-                      const { data: { text } } = await worker.recognize(canvas);
-                      fullText += text + '\n';
-                    }
-                  }
-                  await worker.terminate();
+                    const parseDate = (v: unknown): string => {
+                      if (!v) return '';
+                      if (v instanceof Date) {
+                        const d = v.getDate().toString().padStart(2, '0');
+                        const m = (v.getMonth() + 1).toString().padStart(2, '0');
+                        return `${v.getFullYear()}-${m}-${d}`;
+                      }
+                      const s = String(v).trim();
+                      // JJ/MM/AAAA
+                      const fr = s.match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})$/);
+                      if (fr) return `${fr[3]}-${fr[2].padStart(2, '0')}-${fr[1].padStart(2, '0')}`;
+                      // AAAA-MM-JJ
+                      if (/^\d{4}-\d{2}-\d{2}$/.test(s)) return s;
+                      return s;
+                    };
 
-                  // Parse transactions from OCR text
-                  const lines = fullText.split('\n');
-                  const transactions: Array<{ transactionNumber: string; transactionDate: string; label: string; amount: number }> = [];
+                    const parseAmount = (v: unknown): number => {
+                      if (typeof v === 'number') return Math.abs(v);
+                      const s = String(v).replace(/[^\d,.-]/g, '').replace(',', '.');
+                      const n = parseFloat(s);
+                      return isNaN(n) ? 0 : Math.abs(n);
+                    };
 
-                  for (const line of lines) {
-                    // Common CB statement patterns:
-                    // DD/MM/YYYY  LABEL  AMOUNT  TX_NUMBER
-                    // or: TX_NUMBER  DD/MM/YYYY  LABEL  AMOUNT
-                    const dateMatch = line.match(/(\d{2}[/.-]\d{2}[/.-]\d{4})/);
-                    const amountMatch = line.match(/(\d[\d\s]*[.,]\d{2})\s*€?/);
-                    // Transaction number: sequence of digits (usually 6+ digits)
-                    const txMatch = line.match(/\b(\d{6,})\b/);
-
-                    if (dateMatch && amountMatch) {
-                      const dateParts = dateMatch[1].split(/[/.-]/);
-                      const isoDate = `${dateParts[2]}-${dateParts[1]}-${dateParts[0]}`;
-                      const amount = parseFloat(amountMatch[1].replace(/\s/g, '').replace(',', '.'));
-                      const txNumber = txMatch?.[1] || `CB-${isoDate}-${amount.toFixed(2)}`;
-
-                      // Extract label: remove date, amount, and tx number from line
-                      let label = line
-                        .replace(dateMatch[0], '')
-                        .replace(amountMatch[0], '')
-                        .replace(txMatch?.[0] || '', '')
-                        .trim()
-                        .replace(/\s+/g, ' ')
-                        .substring(0, 200);
-
-                      if (!label) label = 'Transaction CB';
-                      if (amount > 0) {
-                        transactions.push({
-                          transactionNumber: txNumber,
-                          transactionDate: isoDate,
+                    const parsed = rows
+                      .filter((r) => {
+                        const firstVal = String(Object.values(r)[0] ?? '');
+                        return firstVal && !firstVal.toLowerCase().includes('exemple');
+                      })
+                      .map((r, i) => {
+                        // Find columns flexibly (case-insensitive, tolerant)
+                        const get = (keywords: string[]): unknown => {
+                          for (const k of Object.keys(r)) {
+                            const kl = k.toLowerCase();
+                            if (keywords.some((w) => kl.includes(w))) return r[k];
+                          }
+                          return '';
+                        };
+                        const date = parseDate(get(['date']));
+                        const label = String(get(['libell', 'label', 'desc']) || '').trim();
+                        const amount = parseAmount(get(['montant', 'amount']));
+                        const txNum = String(get(['transaction', 'ref', 'num']) || '').trim()
+                          || `${date}-${label}-${amount}-${i}`;
+                        return {
+                          transactionNumber: txNum,
+                          transactionDate: date,
                           label,
                           amount,
-                        });
-                      }
-                    }
-                  }
+                        };
+                      })
+                      .filter((tx) => tx.transactionDate && tx.label && tx.amount > 0);
 
-                  setCbParsedTx(transactions);
+                    if (parsed.length === 0) {
+                      alert('Aucune transaction valide trouvée dans le fichier. Vérifiez les colonnes Date, Libellé, Montant.');
+                    } else {
+                      setCbParsedTx(parsed);
+                    }
+                  } else {
+                    // PDF → OCR
+                    const formData = new FormData();
+                    formData.append('file', file);
+                    const res = await fetch('/api/ocr-cb', { method: 'POST', body: formData });
+                    if (!res.ok) {
+                      const errJson = await res.json().catch(() => ({}));
+                      throw new Error(errJson.error?.message || 'Erreur OCR CB');
+                    }
+                    const json = await res.json();
+                    setCbParsedTx(json.data || []);
+                  }
                 } catch (err) {
-                  console.error('CB PDF parse error:', err);
-                  alert('Erreur lors de la lecture du PDF');
+                  console.error('CB parse error:', err);
+                  alert(err instanceof Error ? err.message : 'Erreur lors de la lecture du fichier');
                 }
                 setCbParsing(false);
               }}
@@ -589,7 +605,7 @@ export default function DecaissementsPage() {
 
           {cbParsing && (
             <div className="text-center py-4 text-sm text-gray-500">
-              ⏳ Analyse du PDF en cours...
+              ⏳ Analyse du fichier en cours...
             </div>
           )}
 
