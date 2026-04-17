@@ -83,7 +83,7 @@ export async function POST(request: Request) {
     );
     const duplicateCount = transactions.length - newTransactions.length;
 
-    // Create new transactions
+    // Create new transactions + matching disbursements (already paid by card)
     const created = [];
     for (const tx of newTransactions) {
       const record = await prisma.cardTransaction.create({
@@ -97,6 +97,24 @@ export async function POST(request: Request) {
           createdBy: session.user.id,
         },
       });
+
+      // Create matching disbursement so it shows up in the list
+      await prisma.disbursement.create({
+        data: {
+          receivedDate: new Date(tx.transactionDate),
+          entityId,
+          supplier: tx.label,
+          amountTtc: tx.amount,
+          priority: 'IMMEDIAT',
+          paymentMethod: 'CB',
+          paymentDueDate: new Date(tx.transactionDate),
+          paidDate: new Date(tx.transactionDate),
+          status: 'PAYE',
+          observations: tx.cardLast4 ? `Import CB ****${tx.cardLast4}` : 'Import CB',
+          createdBy: session.user.id,
+        },
+      });
+
       created.push(record);
     }
 
