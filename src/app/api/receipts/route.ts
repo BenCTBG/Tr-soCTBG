@@ -42,7 +42,7 @@ export async function GET(request: Request) {
     const [receipts, total] = await Promise.all([
       prisma.receipt.findMany({
         where,
-        include: { entity: true, payments: true },
+        include: { entity: true, payments: true, invoice: true },
         orderBy: { expectedDate: 'desc' },
         skip: (page - 1) * limit,
         take: limit,
@@ -86,6 +86,7 @@ export async function POST(request: Request) {
       invoiceNumber,
       clientName,
       amountTtc,
+      amountCee,
       type,
       siteAddress,
       department,
@@ -122,6 +123,7 @@ export async function POST(request: Request) {
         invoiceNumber,
         clientName,
         amountTtc,
+        amountCee: amountCee != null && amountCee !== '' ? amountCee : null,
         type,
         siteAddress: siteAddress || null,
         department: department || null,

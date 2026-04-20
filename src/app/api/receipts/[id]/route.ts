@@ -36,6 +36,11 @@ export async function PUT(
     const body = await request.json();
     const data: Record<string, unknown> = { ...body };
 
+    // Normalize amountCee (empty string → null)
+    if (data.amountCee === '' || data.amountCee === undefined) {
+      data.amountCee = null;
+    }
+
     // Parse date fields
     if (data.expectedDate) data.expectedDate = new Date(data.expectedDate as string);
     if (data.filingDate) data.filingDate = new Date(data.filingDate as string);

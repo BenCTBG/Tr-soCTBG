@@ -100,6 +100,7 @@ export async function POST(request: Request) {
       status,
       observations,
       fileUrl,
+      receiptId,
     } = body;
 
     if (!entityId || !invoiceNumber || !clientName || amountTtc == null || !issueDate) {
@@ -132,6 +133,7 @@ export async function POST(request: Request) {
         status: status || 'EMISE',
         observations: observations || null,
         fileUrl: fileUrl || null,
+        receiptId: receiptId || null,
         createdBy: session.user.id,
       },
       include: { entity: true, bankAccount: true, reminders: true },

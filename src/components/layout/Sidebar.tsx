@@ -28,7 +28,7 @@ const navItems: NavItem[] = [
     roles: ['ADMIN', 'COMPTABLE', 'ADV'],
   },
   {
-    label: 'Facturation',
+    label: 'Facturation client',
     href: '/encaissements',
     icon: '📥',
     roles: ['ADMIN', 'COMPTABLE', 'ADV', 'ADV_RESTREINT', 'OPERATEUR'],
@@ -41,7 +41,7 @@ const navItems: NavItem[] = [
     roles: ['ADMIN', 'COMPTABLE', 'ADV', 'ADV_RESTREINT', 'OPERATEUR'],
   },
   {
-    label: 'CEE',
+    label: 'Appel à facturation CEE',
     href: '/facturation',
     icon: '📄',
     roles: ['ADMIN', 'COMPTABLE', 'ADV', 'ADV_RESTREINT', 'OPERATEUR'],

@@ -61,6 +61,34 @@ export default async function DashboardPage() {
   });
   const expectedReceipts = Number(expectedAgg._sum.amountTtc || 0);
 
+  // ===== 3 notions distinctes : CA, À encaisser, Encaissé =====
+  const allReceipts = await prisma.receipt.findMany({
+    include: { payments: true, invoice: true },
+  });
+  let chiffreAffaires = 0;
+  let aEncaisser = 0;
+  let encaisse = 0;
+  for (const r of allReceipts) {
+    const ttc = Number(r.amountTtc);
+    const cee = Number(r.amountCee || 0);
+    const paid = r.payments.reduce((s, p) => s + Number(p.amount), 0);
+    chiffreAffaires += ttc;
+    encaisse += paid;
+    const base = (cee > 0 && !r.invoice) ? ttc - cee : ttc;
+    aEncaisser += Math.max(0, base - paid);
+  }
+  const orphanInvoices = await prisma.invoice.findMany({
+    where: { receiptId: null, status: { not: 'PAYEE' } },
+    include: { payments: true },
+  });
+  for (const inv of orphanInvoices) {
+    const ttc = Number(inv.amountTtc);
+    const paid = inv.payments.reduce((s, p) => s + Number(p.amount), 0);
+    aEncaisser += Math.max(0, ttc - paid);
+    encaisse += paid;
+    chiffreAffaires += ttc;
+  }
+
   // Alerts
   const alerts: { variant: 'rouge' | 'orange' | 'vert'; icon: string; message: string }[] = [];
 
@@ -193,8 +221,8 @@ export default async function DashboardPage() {
 
   return (
     <>
-      {/* KPI Grid */}
-      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-4 mb-7">
+      {/* KPI Grid - Trésorerie */}
+      <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4 mb-4">
         <KpiCard
           label="Trésorerie Totale"
           value={formatCurrency(totalTreasury)}
@@ -214,16 +242,32 @@ export default async function DashboardPage() {
           variant="red"
         />
         <KpiCard
-          label="Encaissements Attendus"
-          value={formatCurrency(expectedReceipts)}
-          subtitle="Prochains 7 jours"
-          variant="green"
-        />
-        <KpiCard
           label="Solde le plus bas (entité)"
           value={formatCurrency(lowestEntity.balance)}
           subtitle={lowestEntity.entityName}
           variant={lowestEntity.balance < 30000 ? 'red' : 'default'}
+        />
+      </div>
+
+      {/* KPI Grid - Facturation */}
+      <div className="grid grid-cols-1 sm:grid-cols-3 gap-4 mb-7">
+        <KpiCard
+          label="Chiffre d'Affaires"
+          value={formatCurrency(chiffreAffaires)}
+          subtitle="Factures globales (CEE inclus)"
+          variant="default"
+        />
+        <KpiCard
+          label="À Encaisser"
+          value={formatCurrency(aEncaisser)}
+          subtitle="Reste à charge + appels CEE"
+          variant="orange"
+        />
+        <KpiCard
+          label="Encaissé"
+          value={formatCurrency(encaisse)}
+          subtitle="Total paiements reçus"
+          variant="green"
         />
       </div>
 

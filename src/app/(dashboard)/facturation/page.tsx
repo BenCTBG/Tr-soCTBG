@@ -80,6 +80,7 @@ const emptyForm = {
   paidAmount: '',
   observations: '',
   fileUrl: '',
+  receiptId: '',
 };
 
 function toDateInput(val: string | null | undefined): string {
@@ -105,9 +106,13 @@ export default function FacturationPage() {
 
   const [form, setForm] = useState({ ...emptyForm });
 
+  // Receipts with CEE part (available for linking)
+  const [availableReceipts, setAvailableReceipts] = useState<Array<{ id: string; invoiceNumber: string; clientName: string; amountCee: number; ceeDelegataire: string | null; entityId: string }>>([]);
+
   // Filters
   const [filterEntity, setFilterEntity] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [filterDelegataire, setFilterDelegataire] = useState('');
 
   useEffect(() => {
     fetch('/api/entities')
@@ -124,6 +129,19 @@ export default function FacturationPage() {
     fetch('/api/bank-accounts?active=true')
       .then((r) => r.json())
       .then((json) => setBankAccounts(json.data || []))
+      .catch(() => {});
+
+    // Load receipts with CEE part not yet linked to an invoice
+    fetch('/api/receipts')
+      .then((r) => r.json())
+      .then((json) => {
+        const list = (json.data || []) as Array<{ id: string; invoiceNumber: string; clientName: string; amountCee: string | number | null; ceeDelegataire: string | null; entityId: string; invoice?: { id: string } | null }>;
+        setAvailableReceipts(
+          list
+            .filter((r) => Number(r.amountCee || 0) > 0 && !r.invoice)
+            .map((r) => ({ id: r.id, invoiceNumber: r.invoiceNumber, clientName: r.clientName, amountCee: Number(r.amountCee), ceeDelegataire: r.ceeDelegataire, entityId: r.entityId }))
+        );
+      })
       .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -178,6 +196,7 @@ export default function FacturationPage() {
       paidAmount: inv.paidAmount ? String(inv.paidAmount) : '',
       observations: inv.observations || '',
       fileUrl: inv.fileUrl || '',
+      receiptId: inv.receiptId || '',
     });
     setModalOpen(true);
   };
@@ -209,6 +228,7 @@ export default function FacturationPage() {
         paidAmount: form.paidAmount ? Number(form.paidAmount) : undefined,
         observations: form.observations || undefined,
         fileUrl: form.fileUrl || undefined,
+        receiptId: form.receiptId || undefined,
       };
 
       const url = editingId ? `/api/invoices/${editingId}` : '/api/invoices';
@@ -279,18 +299,23 @@ export default function FacturationPage() {
     }
   };
 
+  // Apply delegataire filter
+  const filteredByDeleg = filterDelegataire
+    ? invoices.filter((i) => i.ceeDelegataire === filterDelegataire)
+    : invoices;
+
   // Summary
   const getAmount = (inv: Invoice) => Number(inv.amountTtc) || 0;
-  const totalEmises = invoices
+  const totalEmises = filteredByDeleg
     .filter((i) => i.status !== 'PAYEE' && i.status !== 'ANNULE')
     .reduce((sum, i) => sum + getAmount(i), 0);
-  const totalEnRetard = invoices
+  const totalEnRetard = filteredByDeleg
     .filter((i) => isOverdue(i))
     .reduce((sum, i) => sum + getAmount(i), 0);
-  const totalPayees = invoices
+  const totalPayees = filteredByDeleg
     .filter((i) => i.status === 'PAYEE')
     .reduce((sum, i) => sum + getAmount(i), 0);
-  const nbEnRetard = invoices.filter((i) => isOverdue(i)).length;
+  const nbEnRetard = filteredByDeleg.filter((i) => isOverdue(i)).length;
 
   const handleExport = () => {
     exportToExcel(
@@ -347,7 +372,50 @@ export default function FacturationPage() {
         <SummaryCard label="Total encaissé" value={formatCurrency(totalPayees)} borderColor="border-t-success" />
       </div>
 
-      <div className="flex gap-2.5 mb-4">
+      {/* Vue par délégataire */}
+      {(() => {
+        const byDeleg: Record<string, { count: number; total: number; paid: number; due: number }> = {};
+        for (const inv of invoices) {
+          const key = inv.ceeDelegataire || '— Non spécifié —';
+          if (!byDeleg[key]) byDeleg[key] = { count: 0, total: 0, paid: 0, due: 0 };
+          byDeleg[key].count += 1;
+          byDeleg[key].total += Number(inv.amountTtc);
+          const p = Number(inv.paidAmount || 0);
+          byDeleg[key].paid += p;
+          if (inv.status !== 'PAYEE') byDeleg[key].due += Number(inv.amountTtc) - p;
+        }
+        const entries = Object.entries(byDeleg).sort((a, b) => b[1].due - a[1].due);
+        if (entries.length === 0) return null;
+        return (
+          <div className="bg-white p-4 rounded-lg shadow-card mb-5">
+            <h3 className="text-sm font-semibold text-gray-dark mb-3 uppercase tracking-wide">💼 Synthèse par délégataire</h3>
+            <table className="w-full border-collapse text-sm">
+              <thead>
+                <tr>
+                  <th className="bg-gray-light p-2 text-left font-semibold text-xs uppercase">Délégataire</th>
+                  <th className="bg-gray-light p-2 text-left font-semibold text-xs uppercase">Nb</th>
+                  <th className="bg-gray-light p-2 text-right font-semibold text-xs uppercase">Total</th>
+                  <th className="bg-gray-light p-2 text-right font-semibold text-xs uppercase">Encaissé</th>
+                  <th className="bg-gray-light p-2 text-right font-semibold text-xs uppercase">Restant dû</th>
+                </tr>
+              </thead>
+              <tbody>
+                {entries.map(([name, v]) => (
+                  <tr key={name} className="border-t">
+                    <td className="p-2">{name}</td>
+                    <td className="p-2">{v.count}</td>
+                    <td className="p-2 text-right">{formatCurrency(v.total)}</td>
+                    <td className="p-2 text-right text-green-600">{formatCurrency(v.paid)}</td>
+                    <td className="p-2 text-right font-semibold text-orange-600">{formatCurrency(v.due)}</td>
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+      })()}
+
+      <div className="flex gap-2.5 mb-4 flex-wrap">
         <select value={filterEntity} onChange={(e) => setFilterEntity(e.target.value)}
           className="px-3 py-2 border border-gray-border rounded-md text-xs cursor-pointer bg-white focus:outline-none focus:border-ctbg-red">
           <option value="">Toutes les entités</option>
@@ -360,6 +428,13 @@ export default function FacturationPage() {
           <option value="">Tous les statuts</option>
           {Object.entries(INVOICE_STATUS_LABELS).map(([val, lab]) => (
             <option key={val} value={val}>{lab}</option>
+          ))}
+        </select>
+        <select value={filterDelegataire} onChange={(e) => setFilterDelegataire(e.target.value)}
+          className="px-3 py-2 border border-gray-border rounded-md text-xs cursor-pointer bg-white focus:outline-none focus:border-ctbg-red">
+          <option value="">Tous les délégataires</option>
+          {Array.from(new Set(invoices.map((i) => i.ceeDelegataire).filter(Boolean))).map((d) => (
+            <option key={d as string} value={d as string}>{d}</option>
           ))}
         </select>
       </div>
@@ -382,12 +457,12 @@ export default function FacturationPage() {
             </tr>
           </thead>
           <tbody>
-            {invoices.length === 0 ? (
+            {filteredByDeleg.length === 0 ? (
               <tr>
                 <td colSpan={11} className="p-6 text-center text-gray-text">Aucune facture trouvée</td>
               </tr>
             ) : (
-              invoices.map((inv) => {
+              filteredByDeleg.map((inv) => {
                 const overdue = isOverdue(inv);
                 return (
                   <tr
@@ -450,6 +525,38 @@ export default function FacturationPage() {
             <div className="mb-4 px-3 py-2 bg-gray-light border border-gray-border rounded-md text-xs flex items-center justify-between">
               <span>Facture jointe</span>
               <a href={form.fileUrl} target="_blank" rel="noopener noreferrer" className="text-ctbg-red hover:underline">Voir le fichier</a>
+            </div>
+          )}
+          {!editingId && availableReceipts.length > 0 && (
+            <div>
+              <FormField
+                label="🔗 Facture client liée (dossier)"
+                value={form.receiptId}
+                onChange={(val) => {
+                  setField('receiptId')(val);
+                  // Auto-fill client/entity/amount/delegataire from receipt
+                  const rec = availableReceipts.find((r) => r.id === val);
+                  if (rec) {
+                    setForm((prev) => ({
+                      ...prev,
+                      receiptId: val,
+                      clientName: rec.clientName,
+                      entityId: rec.entityId,
+                      amountTtc: String(rec.amountCee),
+                      amountCee: String(rec.amountCee),
+                      ceeDelegataire: rec.ceeDelegataire || prev.ceeDelegataire,
+                    }));
+                  }
+                }}
+                options={[
+                  { value: '', label: '-- Aucun (appel indépendant) --' },
+                  ...availableReceipts.map((r) => ({
+                    value: r.id,
+                    label: `${r.invoiceNumber} - ${r.clientName} (${r.amountCee.toLocaleString('fr-FR')} € CEE${r.ceeDelegataire ? ' • ' + r.ceeDelegataire : ''})`,
+                  })),
+                ]}
+              />
+              <p className="text-xs text-gray-500 mt-1">Liez cet appel à la facture client pour faire basculer la part CEE dans &quot;à encaisser&quot;.</p>
             </div>
           )}
           <FormField label="N° Facture" value={form.invoiceNumber} onChange={setField('invoiceNumber')} placeholder="FC-2024-001" required />

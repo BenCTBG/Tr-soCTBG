@@ -32,12 +32,14 @@ interface Receipt {
   type: string;
   ceeDelegataire: string | null;
   amountTtc: string | number;
+  amountCee: string | number | null;
   filingDate: string | null;
   receivedDate: string | null;
   delayDays: number | null;
   status: string;
   observations: string | null;
   payments: Array<{ id: string; amount: string | number; date: string; source: string; payer: string | null }>;
+  invoice?: { id: string; invoiceNumber: string; status: string; amountTtc: string | number } | null;
 }
 
 interface InvoicePayment {
@@ -58,6 +60,7 @@ const emptyForm = {
   siteAddress: '',
   department: '',
   amountTtc: '',
+  amountCee: '',
   type: 'CLIENT_DIRECT',
   ceeDelegataire: '',
   filingDate: '',
@@ -173,6 +176,7 @@ export default function EncaissementsPage() {
       siteAddress: r.siteAddress || '',
       department: r.department || '',
       amountTtc: String(r.amountTtc),
+      amountCee: r.amountCee != null ? String(r.amountCee) : '',
       type: r.type,
       ceeDelegataire: r.ceeDelegataire || '',
       filingDate: toDateInput(r.filingDate),
@@ -266,8 +270,9 @@ export default function EncaissementsPage() {
         siteAddress: form.siteAddress || undefined,
         department: form.department || undefined,
         amountTtc: Number(form.amountTtc),
+        amountCee: form.amountCee ? Number(form.amountCee) : undefined,
         type: form.type,
-        ceeDelegataire: form.type === 'CEE' ? (form.ceeDelegataire || undefined) : undefined,
+        ceeDelegataire: form.ceeDelegataire || undefined,
         filingDate: form.filingDate || undefined,
         receivedDate: form.receivedDate || undefined,
         status: form.status,
@@ -428,10 +433,19 @@ export default function EncaissementsPage() {
                   <td className="p-3 border-b border-gray-border cursor-pointer" onClick={() => openEdit(r)}>{r.clientName}</td>
                   <td className="p-3 border-b border-gray-border cursor-pointer" onClick={() => openEdit(r)}>{r.entity?.name || '-'}</td>
                   <td className="p-3 border-b border-gray-border cursor-pointer" onClick={() => openEdit(r)}>{RECEIPT_TYPE_LABELS[r.type] || r.type}</td>
-                  <td className="p-3 border-b border-gray-border cursor-pointer" onClick={() => openEdit(r)}>{formatCurrency(Number(r.amountTtc))}</td>
+                  <td className="p-3 border-b border-gray-border cursor-pointer" onClick={() => openEdit(r)}>
+                    {formatCurrency(Number(r.amountTtc))}
+                    {Number(r.amountCee || 0) > 0 && (
+                      <div className="text-xs text-blue-600 mt-0.5">dont CEE : {formatCurrency(Number(r.amountCee))}</div>
+                    )}
+                  </td>
                   {(() => {
                     const paid = (r.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0);
-                    const rest = Number(r.amountTtc) - paid;
+                    const cee = Number(r.amountCee || 0);
+                    const hasCeeCall = !!r.invoice; // appel à facturation CEE créé
+                    // Si la part CEE existe mais aucun appel créé, on l'exclut du "à encaisser"
+                    const base = (cee > 0 && !hasCeeCall) ? Number(r.amountTtc) - cee : Number(r.amountTtc);
+                    const rest = base - paid;
                     return (
                       <>
                         <td className="p-3 border-b border-gray-border cursor-pointer" onClick={() => openEdit(r)}>
@@ -445,7 +459,14 @@ export default function EncaissementsPage() {
                           {rest <= 0 ? (
                             <span className="text-green-600 font-semibold">0 €</span>
                           ) : (
-                            <span className={`font-semibold ${paid > 0 ? 'text-orange-500' : ''}`}>{formatCurrency(rest)}</span>
+                            <>
+                              <span className={`font-semibold ${paid > 0 ? 'text-orange-500' : ''}`}>{formatCurrency(rest)}</span>
+                              {cee > 0 && !hasCeeCall && (
+                                <div className="text-xs text-gray-500 italic mt-0.5" title="La part CEE apparaîtra ici quand un appel à facturation CEE sera créé">
+                                  + {formatCurrency(cee)} CEE en attente
+                                </div>
+                              )}
+                            </>
                           )}
                         </td>
                       </>
@@ -563,10 +584,22 @@ export default function EncaissementsPage() {
           <FormField label="Client / Nom" value={form.clientName} onChange={setField('clientName')} placeholder="Nom du client" required />
           <FormField label="Adresse Chantier" value={form.siteAddress} onChange={setField('siteAddress')} placeholder="Adresse du chantier" />
           <FormField label="Département" value={form.department} onChange={setField('department')} placeholder="Ex: 75" />
-          <FormField label="Montant TTC" type="number" value={form.amountTtc} onChange={setField('amountTtc')} placeholder="0" required />
+          <FormField label="Montant TTC (global, CEE inclus)" type="number" value={form.amountTtc} onChange={setField('amountTtc')} placeholder="0" required />
+          <FormField label="Dont part CEE (€)" type="number" value={form.amountCee} onChange={setField('amountCee')} placeholder="0 si pas de CEE" />
+          {form.amountCee && Number(form.amountCee) > 0 && (
+            <>
+              <div className="text-xs bg-blue-50 border border-blue-200 rounded p-2 text-blue-700">
+                💡 Reste à charge client : <strong>{(Number(form.amountTtc || 0) - Number(form.amountCee || 0)).toLocaleString('fr-FR')} €</strong>
+                <br/>
+                La part CEE ({Number(form.amountCee).toLocaleString('fr-FR')} €) sera dans &quot;à encaisser&quot; uniquement quand un appel à facturation CEE sera créé.
+              </div>
+              <FormField label="Délégataire CEE" value={form.ceeDelegataire} onChange={setField('ceeDelegataire')}
+                options={[{ value: '', label: '-- Sélectionner --' }, ...CEE_DELEGATAIRES.map((d) => ({ value: d, label: d }))]} />
+            </>
+          )}
           <FormField label="Type" value={form.type} onChange={setField('type')} required
             options={Object.entries(RECEIPT_TYPE_LABELS).map(([v, l]) => ({ value: v, label: l }))} />
-          {form.type === 'CEE' && (
+          {form.type === 'CEE' && !form.amountCee && (
             <FormField label="Délégataire CEE" value={form.ceeDelegataire} onChange={setField('ceeDelegataire')}
               options={[{ value: '', label: '-- Sélectionner --' }, ...CEE_DELEGATAIRES.map((d) => ({ value: d, label: d }))]} />
           )}

@@ -94,6 +94,7 @@ export const CHARGE_CATEGORY_LABELS: Record<string, string> = {
 };
 
 export const INVOICE_STATUS_LABELS: Record<string, string> = {
+  CEE_ATTENDU: 'CEE attendu',
   EMISE: 'Émise',
   ENVOYEE: 'Envoyée',
   RELANCEE: 'Relancée',

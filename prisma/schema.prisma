@@ -154,6 +154,7 @@ model Receipt {
   siteAddress   String?       @map("site_address")
   department    String?       @db.VarChar(3)
   amountTtc     Decimal       @map("amount_ttc") @db.Decimal(12, 2)
+  amountCee     Decimal?      @map("amount_cee") @db.Decimal(12, 2)
   type          ReceiptType
   ceeDelegataire String?      @map("cee_delegataire")
   status        ReceiptStatus @default(ATTENDU)
@@ -288,6 +289,7 @@ model Notification {
 }
 
 enum InvoiceStatus {
+  CEE_ATTENDU
   EMISE
   ENVOYEE
   RELANCEE

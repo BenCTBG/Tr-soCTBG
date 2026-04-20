@@ -77,6 +77,43 @@ export async function GET() {
     });
     const expectedReceipts = Number(expectedReceiptsAgg._sum.amountTtc || 0);
 
+    // ===== 3 NOTIONS DISTINCTES =====
+    // CA = somme factures clients globales (CEE inclus)
+    // À encaisser = reste à charge client (sans CEE) + appels CEE créés non payés
+    // Encaissé = somme paiements reçus
+    const allReceipts = await prisma.receipt.findMany({
+      include: { payments: true, invoice: true },
+    });
+
+    let chiffreAffaires = 0;
+    let aEncaisser = 0;
+    let encaisse = 0;
+
+    for (const r of allReceipts) {
+      const ttc = Number(r.amountTtc);
+      const cee = Number(r.amountCee || 0);
+      const paid = r.payments.reduce((s, p) => s + Number(p.amount), 0);
+      chiffreAffaires += ttc;
+      encaisse += paid;
+      // Si part CEE mais pas d'appel créé, on l'exclut du "à encaisser"
+      const base = (cee > 0 && !r.invoice) ? ttc - cee : ttc;
+      const rest = Math.max(0, base - paid);
+      aEncaisser += rest;
+    }
+
+    // Appels CEE (Invoice) non liés à un Receipt : ajouter leur montant restant
+    const orphanInvoices = await prisma.invoice.findMany({
+      where: { receiptId: null, status: { not: 'PAYEE' } },
+      include: { payments: true },
+    });
+    for (const inv of orphanInvoices) {
+      const ttc = Number(inv.amountTtc);
+      const paid = inv.payments.reduce((s, p) => s + Number(p.amount), 0);
+      aEncaisser += Math.max(0, ttc - paid);
+      encaisse += paid;
+      chiffreAffaires += ttc;
+    }
+
     // Entity balances
     const entityBalances = latestPositions.map((p) => ({
       entityName: p.entityName,
@@ -148,6 +185,9 @@ export async function GET() {
         entitiesInAlert,
         urgentInvoices,
         expectedReceipts,
+        chiffreAffaires,
+        aEncaisser,
+        encaisse,
         entityBalances,
         alerts,
       },
