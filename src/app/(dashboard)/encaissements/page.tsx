@@ -498,7 +498,11 @@ export default function EncaissementsPage() {
                     );
                   })()}
                   <td className="p-3 border-b border-gray-border cursor-pointer" onClick={() => openEdit(r)}>
-                    <StatusBadge status={r.status} label={STATUS_LABELS_RECEIPT[r.status] || r.status} />
+                    {r.type === 'AVOIR' ? (
+                      <span className="text-gray-400 text-xs italic">—</span>
+                    ) : (
+                      <StatusBadge status={r.status} label={STATUS_LABELS_RECEIPT[r.status] || r.status} />
+                    )}
                   </td>
                   <td className="p-3 border-b border-gray-border cursor-pointer text-xs text-gray-600" onClick={() => openEdit(r)}>
                     {r.observations || '-'}
