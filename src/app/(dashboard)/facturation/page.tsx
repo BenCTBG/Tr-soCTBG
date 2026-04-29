@@ -25,6 +25,7 @@ interface BankAccountData {
   entityId: string;
   bankName: string;
   label: string | null;
+  isDefault?: boolean;
 }
 
 interface ReminderData {
@@ -561,7 +562,11 @@ export default function FacturationPage() {
           )}
           <FormField label="N° Facture" value={form.invoiceNumber} onChange={setField('invoiceNumber')} placeholder="FC-2024-001" required />
           <FormField label="Client" value={form.clientName} onChange={setField('clientName')} placeholder="Nom du client" required />
-          <FormField label="Entité" value={form.entityId} onChange={(val) => { setField('entityId')(val); setField('bankAccountId')(''); }} required
+          <FormField label="Entité" value={form.entityId} onChange={(val) => {
+            setField('entityId')(val);
+            const defaultBank = bankAccounts.find((ba) => ba.entityId === val && ba.isDefault);
+            setField('bankAccountId')(defaultBank ? defaultBank.id : '');
+          }} required
             options={entities.map((e) => ({ value: e.id, label: e.name }))} />
           <FormField label="Compte à créditer" value={form.bankAccountId} onChange={setField('bankAccountId')}
             options={[

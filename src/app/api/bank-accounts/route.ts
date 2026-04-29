@@ -63,7 +63,7 @@ export async function POST(request: Request) {
 
   try {
     const body = await request.json();
-    const { entityId, bankName, accountNumber, iban, label } = body;
+    const { entityId, bankName, accountNumber, iban, label, isDefault, overdraftLimit, alertThreshold } = body;
 
     if (!entityId || !bankName) {
       return Response.json(
@@ -86,6 +86,14 @@ export async function POST(request: Request) {
       );
     }
 
+    // If isDefault, unset previous default for this entity
+    if (isDefault) {
+      await prisma.bankAccount.updateMany({
+        where: { entityId, isDefault: true },
+        data: { isDefault: false },
+      });
+    }
+
     const bankAccount = await prisma.bankAccount.create({
       data: {
         entityId,
@@ -93,6 +101,9 @@ export async function POST(request: Request) {
         accountNumber: accountNumber || null,
         iban: iban || null,
         label: label || null,
+        isDefault: !!isDefault,
+        overdraftLimit: overdraftLimit ?? null,
+        alertThreshold: alertThreshold ?? null,
       },
       include: { entity: true },
     });

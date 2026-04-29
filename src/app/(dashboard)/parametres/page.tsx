@@ -30,6 +30,9 @@ interface BankAccount {
   iban: string | null;
   label: string | null;
   active: boolean;
+  isDefault: boolean;
+  overdraftLimit: string | number | null;
+  alertThreshold: string | number | null;
   createdAt: string;
   entity?: { name: string };
 }
@@ -65,6 +68,9 @@ const emptyBankAccountForm = {
   iban: '',
   label: '',
   active: 'true',
+  isDefault: 'false',
+  overdraftLimit: '',
+  alertThreshold: '',
 };
 
 export default function ParametresPage() {
@@ -228,6 +234,9 @@ export default function ParametresPage() {
       iban: ba.iban || '',
       label: ba.label || '',
       active: String(ba.active),
+      isDefault: String(ba.isDefault),
+      overdraftLimit: ba.overdraftLimit != null ? String(ba.overdraftLimit) : '',
+      alertThreshold: ba.alertThreshold != null ? String(ba.alertThreshold) : '',
     });
     setBankAccountModalOpen(true);
   };
@@ -250,6 +259,9 @@ export default function ParametresPage() {
             iban: bankAccountForm.iban,
             label: bankAccountForm.label,
             active: bankAccountForm.active === 'true',
+            isDefault: bankAccountForm.isDefault === 'true',
+            overdraftLimit: bankAccountForm.overdraftLimit ? Number(bankAccountForm.overdraftLimit) : null,
+            alertThreshold: bankAccountForm.alertThreshold ? Number(bankAccountForm.alertThreshold) : null,
           }),
         });
         if (res.ok) {
@@ -266,6 +278,9 @@ export default function ParametresPage() {
             accountNumber: bankAccountForm.accountNumber || undefined,
             iban: bankAccountForm.iban || undefined,
             label: bankAccountForm.label || undefined,
+            isDefault: bankAccountForm.isDefault === 'true',
+            overdraftLimit: bankAccountForm.overdraftLimit ? Number(bankAccountForm.overdraftLimit) : undefined,
+            alertThreshold: bankAccountForm.alertThreshold ? Number(bankAccountForm.alertThreshold) : undefined,
           }),
         });
         if (res.ok) {
@@ -527,6 +542,30 @@ export default function ParametresPage() {
               <FormField label="Numero de compte" value={bankAccountForm.accountNumber} onChange={setBankAccountField('accountNumber')} placeholder="Ex: 00012345678" />
               <FormField label="IBAN" value={bankAccountForm.iban} onChange={setBankAccountField('iban')} placeholder="Ex: FR76 3000 1007 ..." />
               <FormField label="Label" value={bankAccountForm.label} onChange={setBankAccountField('label')} placeholder="Ex: Compte courant principal" />
+              <FormField
+                label="🌟 Compte par défaut pour cette entité"
+                value={bankAccountForm.isDefault}
+                onChange={setBankAccountField('isDefault')}
+                options={[
+                  { value: 'false', label: 'Non' },
+                  { value: 'true', label: 'Oui (auto-sélectionné dans les factures)' },
+                ]}
+              />
+              <FormField
+                label="Découvert autorisé (€)"
+                type="number"
+                value={bankAccountForm.overdraftLimit}
+                onChange={setBankAccountField('overdraftLimit')}
+                placeholder="Ex: 15000 (laisser vide si aucun)"
+              />
+              <FormField
+                label="Seuil d'alerte (€)"
+                type="number"
+                value={bankAccountForm.alertThreshold}
+                onChange={setBankAccountField('alertThreshold')}
+                placeholder="Ex: -15000 pour HOME (alerte si solde < -15000)"
+              />
+              <p className="text-xs text-gray-500 mb-2">💡 Si solde &lt; seuil d&apos;alerte → notification rouge sur le dashboard</p>
               {isEditingBankAccount && (
                 <FormField
                   label="Statut"

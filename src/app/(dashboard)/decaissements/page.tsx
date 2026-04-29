@@ -8,6 +8,7 @@ import Modal from '@/components/ui/Modal';
 import FormField from '@/components/ui/FormField';
 import InvoiceUploadZone from '@/components/ui/InvoiceUploadZone';
 import type { ExtractedFields } from '@/components/ui/InvoiceUploadZone';
+import BatchInvoiceUpload from '@/components/ui/BatchInvoiceUpload';
 import { formatCurrency, formatDate } from '@/utils/formatters';
 import { exportToExcel } from '@/utils/exportExcel';
 import {
@@ -26,6 +27,7 @@ interface BankAccountData {
   entityId: string;
   bankName: string;
   label: string | null;
+  isDefault?: boolean;
 }
 
 interface Disbursement {
@@ -141,9 +143,11 @@ export default function DecaissementsPage() {
   }, [fetchDisbursements]);
 
   const resetForm = useCallback(() => {
-    setForm({ ...emptyForm, entityId: entities[0]?.id || '' });
+    const eId = entities[0]?.id || '';
+    const defaultBank = bankAccounts.find((ba) => ba.entityId === eId && ba.isDefault);
+    setForm({ ...emptyForm, entityId: eId, bankAccountId: defaultBank ? defaultBank.id : '' });
     setEditingId(null);
-  }, [entities]);
+  }, [entities, bankAccounts]);
 
   const openCreate = () => {
     resetForm();
@@ -281,6 +285,15 @@ export default function DecaissementsPage() {
         </button>
       </div>
 
+      <div className="mb-4">
+        <BatchInvoiceUpload
+          entities={entities}
+          bankAccounts={bankAccounts}
+          mode="achat"
+          onComplete={() => fetchDisbursements()}
+        />
+      </div>
+
       <div className="grid grid-cols-1 sm:grid-cols-3 gap-3 mb-5">
         <SummaryCard label="Total à Payer" value={formatCurrency(totalAPayer)} borderColor="border-t-error" />
         <SummaryCard label="Dont Immédiat" value={formatCurrency(dontImmediat)} borderColor="border-t-error" />
@@ -316,6 +329,7 @@ export default function DecaissementsPage() {
           <thead>
             <tr>
               <th className="bg-gray-light p-3 text-left font-semibold text-gray-dark border-b border-gray-border text-xs uppercase tracking-wide">Date Réception</th>
+              <th className="bg-gray-light p-3 text-left font-semibold text-gray-dark border-b border-gray-border text-xs uppercase tracking-wide">Date Échéance</th>
               <th className="bg-gray-light p-3 text-left font-semibold text-gray-dark border-b border-gray-border text-xs uppercase tracking-wide">Semaine</th>
               <th className="bg-gray-light p-3 text-left font-semibold text-gray-dark border-b border-gray-border text-xs uppercase tracking-wide">Fournisseur</th>
               <th className="bg-gray-light p-3 text-left font-semibold text-gray-dark border-b border-gray-border text-xs uppercase tracking-wide">Entité</th>
@@ -329,7 +343,7 @@ export default function DecaissementsPage() {
           <tbody>
             {disbursements.length === 0 ? (
               <tr>
-                <td colSpan={9} className="p-6 text-center text-gray-text">Aucun décaissement trouvé</td>
+                <td colSpan={10} className="p-6 text-center text-gray-text">Aucun décaissement trouvé</td>
               </tr>
             ) : (
               disbursements.map((d) => (
@@ -339,6 +353,20 @@ export default function DecaissementsPage() {
                   className="hover:bg-gray-light transition-colors cursor-pointer"
                 >
                   <td className="p-3 border-b border-gray-border">{formatDate(d.receivedDate)}</td>
+                  <td className="p-3 border-b border-gray-border">
+                    {d.paymentDueDate ? (
+                      <span className={(() => {
+                        const due = new Date(d.paymentDueDate);
+                        const today = new Date(); today.setHours(0,0,0,0);
+                        due.setHours(0,0,0,0);
+                        const diff = Math.floor((due.getTime() - today.getTime()) / 86400000);
+                        if (diff <= 0) return 'text-red-600 font-semibold';
+                        if (diff <= 3) return 'text-orange-600 font-semibold';
+                        if (diff <= 15) return 'text-yellow-600';
+                        return 'text-gray-text';
+                      })()}>{formatDate(d.paymentDueDate)}</span>
+                    ) : <span className="text-gray-400">—</span>}
+                  </td>
                   <td className="p-3 border-b border-gray-border text-xs text-gray-text">{getISOWeek(d.receivedDate)}</td>
                   <td className="p-3 border-b border-gray-border">{d.supplier}</td>
                   <td className="p-3 border-b border-gray-border">{d.entity?.name || '-'}</td>
@@ -436,7 +464,12 @@ export default function DecaissementsPage() {
             </div>
           )}
           <FormField label="Date Réception" type="date" value={form.receivedDate} onChange={setField('receivedDate')} required />
-          <FormField label="Entité" value={form.entityId} onChange={(val) => { setField('entityId')(val); setField('bankAccountId')(''); }} required
+          <FormField label="Entité" value={form.entityId} onChange={(val) => {
+            setField('entityId')(val);
+            // Auto-select default bank account for this entity
+            const defaultBank = bankAccounts.find((ba) => ba.entityId === val && ba.isDefault);
+            setField('bankAccountId')(defaultBank ? defaultBank.id : '');
+          }} required
             options={entities.map((e) => ({ value: e.id, label: e.name }))} />
           <FormField label="Compte à débiter" value={form.bankAccountId} onChange={setField('bankAccountId')}
             options={[

@@ -103,8 +103,38 @@ export const INVOICE_STATUS_LABELS: Record<string, string> = {
   LITIGE: 'Litige',
 };
 
-export function getAlertLevel(balance: number): string {
-  if (balance < 0) return 'NEGATIF';
+/**
+ * Calcule le niveau d'alerte d'un solde bancaire.
+ *
+ * @param balance - Solde du compte
+ * @param alertThreshold - Seuil personnalisé en dessous duquel le compte est en alerte (ex: -15000 pour HOME avec découvert autorisé)
+ * @param overdraftLimit - Découvert autorisé (ex: 15000 pour HOME). Si défini, NEGATIF n'est déclenché qu'au-delà.
+ *
+ * Si alertThreshold est défini, on l'utilise comme seuil principal :
+ * - balance < alertThreshold → CRITIQUE
+ * - balance < alertThreshold + 5000 → ATTENTION
+ * Sinon, comportement par défaut (30k / 50k).
+ */
+export function getAlertLevel(
+  balance: number,
+  alertThreshold?: number | null,
+  overdraftLimit?: number | null
+): string {
+  // Si découvert autorisé : NEGATIF se déclenche uniquement au-delà
+  if (overdraftLimit != null && overdraftLimit > 0) {
+    if (balance < -overdraftLimit) return 'NEGATIF';
+  } else {
+    if (balance < 0) return 'NEGATIF';
+  }
+
+  // Seuil personnalisé prioritaire
+  if (alertThreshold != null) {
+    if (balance < alertThreshold) return 'CRITIQUE';
+    if (balance < alertThreshold + 5000) return 'ATTENTION';
+    return 'NORMAL';
+  }
+
+  // Comportement par défaut
   if (balance < 30000) return 'CRITIQUE';
   if (balance < 50000) return 'ATTENTION';
   return 'NORMAL';

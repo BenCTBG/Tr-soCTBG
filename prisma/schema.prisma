@@ -115,6 +115,9 @@ model BankAccount {
   iban          String?
   label         String?
   active        Boolean  @default(true)
+  isDefault     Boolean  @default(false) @map("is_default")
+  overdraftLimit Decimal? @map("overdraft_limit") @db.Decimal(12, 2)
+  alertThreshold Decimal? @map("alert_threshold") @db.Decimal(12, 2)
   createdAt     DateTime @default(now()) @map("created_at")
 
   entity        Entity         @relation(fields: [entityId], references: [id])

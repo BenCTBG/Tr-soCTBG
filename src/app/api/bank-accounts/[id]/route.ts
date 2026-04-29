@@ -40,6 +40,17 @@ export async function PUT(
     if (body.iban !== undefined) data.iban = body.iban || null;
     if (body.label !== undefined) data.label = body.label || null;
     if (body.active !== undefined) data.active = body.active;
+    if (body.isDefault !== undefined) data.isDefault = body.isDefault;
+    if (body.overdraftLimit !== undefined) data.overdraftLimit = body.overdraftLimit;
+    if (body.alertThreshold !== undefined) data.alertThreshold = body.alertThreshold;
+
+    // If setting as default, unset previous default for the entity
+    if (body.isDefault === true) {
+      await prisma.bankAccount.updateMany({
+        where: { entityId: existing.entityId, isDefault: true, id: { not: id } },
+        data: { isDefault: false },
+      });
+    }
 
     const bankAccount = await prisma.bankAccount.update({
       where: { id },

@@ -4,11 +4,30 @@ import { prisma } from '@/lib/prisma';
 import { checkAccess } from '@/lib/access';
 import { AlertLevel } from '@/generated/prisma/enums';
 
-function computeAlertLevel(balance: number): AlertLevel {
+function computeAlertLevel(
+  balance: number,
+  alertThreshold?: number | null,
+  overdraftLimit?: number | null
+): AlertLevel {
+  // Découvert autorisé : NEGATIF se déclenche uniquement au-delà
+  if (overdraftLimit != null && overdraftLimit > 0) {
+    if (balance < -Number(overdraftLimit)) return AlertLevel.NEGATIF;
+  } else {
+    if (balance < 0) return AlertLevel.NEGATIF;
+  }
+
+  // Seuil personnalisé prioritaire
+  if (alertThreshold != null) {
+    const threshold = Number(alertThreshold);
+    if (balance < threshold) return AlertLevel.CRITIQUE;
+    if (balance < threshold + 5000) return AlertLevel.ATTENTION;
+    return AlertLevel.NORMAL;
+  }
+
+  // Comportement par défaut
   if (balance >= 50000) return AlertLevel.NORMAL;
   if (balance >= 30000) return AlertLevel.ATTENTION;
-  if (balance >= 0) return AlertLevel.CRITIQUE;
-  return AlertLevel.NEGATIF;
+  return AlertLevel.CRITIQUE;
 }
 
 export async function GET(request: Request) {
@@ -115,9 +134,23 @@ export async function POST(request: Request) {
 
       const previousBalance = previous ? Number(previous.balance) : 0;
       const variation = pos.balance - previousBalance;
-      const alertLevel = computeAlertLevel(pos.balance);
 
       const bankAccountId = pos.bankAccountId || null;
+
+      // Récupère seuils personnalisés du compte bancaire si dispo
+      let alertThreshold: number | null = null;
+      let overdraftLimit: number | null = null;
+      if (bankAccountId) {
+        const ba = await prisma.bankAccount.findUnique({
+          where: { id: bankAccountId },
+          select: { alertThreshold: true, overdraftLimit: true },
+        });
+        if (ba) {
+          alertThreshold = ba.alertThreshold != null ? Number(ba.alertThreshold) : null;
+          overdraftLimit = ba.overdraftLimit != null ? Number(ba.overdraftLimit) : null;
+        }
+      }
+      const alertLevel = computeAlertLevel(pos.balance, alertThreshold, overdraftLimit);
 
       // Chercher si une position existe déjà pour ce jour/entité/compte
       const existing = await prisma.bankPosition.findFirst({

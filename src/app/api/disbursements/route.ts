@@ -2,6 +2,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { checkAccess } from '@/lib/access';
+import { computePriority } from '@/lib/priority';
 
 export async function GET(request: Request) {
   const session = await getServerSession(authOptions);
@@ -50,8 +51,14 @@ export async function GET(request: Request) {
       prisma.disbursement.count({ where }),
     ]);
 
+    // Recalcul automatique de la priorité selon paymentDueDate (sauf BLOQUE/ATTENTE)
+    const dataWithPriority = disbursements.map((d) => ({
+      ...d,
+      priority: computePriority(d.paymentDueDate, d.priority),
+    }));
+
     return Response.json({
-      data: disbursements,
+      data: dataWithPriority,
       meta: { total, page, limit },
     });
   } catch {
@@ -96,17 +103,20 @@ export async function POST(request: Request) {
       fileUrl,
     } = body;
 
-    if (!receivedDate || !entityId || !supplier || amountTtc == null || !priority) {
+    if (!receivedDate || !entityId || !supplier || amountTtc == null) {
       return Response.json(
         {
           error: {
             code: 'VALIDATION_ERROR',
-            message: 'receivedDate, entityId, supplier, amountTtc et priority sont requis',
+            message: 'receivedDate, entityId, supplier et amountTtc sont requis',
           },
         },
         { status: 400 }
       );
     }
+
+    // Priorité auto-calculée selon paymentDueDate (sauf si l'utilisateur a explicitement choisi BLOQUE/ATTENTE)
+    const finalPriority = computePriority(paymentDueDate, priority);
 
     const disbursement = await prisma.disbursement.create({
       data: {
@@ -115,7 +125,7 @@ export async function POST(request: Request) {
         bankAccountId: bankAccountId || null,
         supplier,
         amountTtc,
-        priority,
+        priority: finalPriority,
         siteRef: siteRef || null,
         amountHt: amountHt ?? null,
         paymentMethod: paymentMethod || null,

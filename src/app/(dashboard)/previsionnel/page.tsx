@@ -252,7 +252,7 @@ export default function PrevisionnelPage() {
   const [days, setDays] = useState(90);
   const [forecast, setForecast] = useState<ForecastData | null>(null);
   const [loading, setLoading] = useState(true);
-  const [activeTab, setActiveTab] = useState<ViewTab>('hebdomadaire');
+  const [activeTab, setActiveTab] = useState<ViewTab>('journalier');
 
   // Fetch entities
   useEffect(() => {
@@ -346,9 +346,9 @@ export default function PrevisionnelPage() {
   }, [monthlyData]);
 
   const tabs: { key: ViewTab; label: string }[] = [
+    { key: 'journalier', label: 'Journalier (J+1, J+2...)' },
     { key: 'hebdomadaire', label: 'Hebdomadaire' },
     { key: 'mensuel', label: 'Mensuel' },
-    { key: 'journalier', label: 'Journalier' },
   ];
 
   return (

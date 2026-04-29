@@ -2,6 +2,7 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 import { checkAccess } from '@/lib/access';
+import { computePriority } from '@/lib/priority';
 
 export async function PUT(
   request: Request,
@@ -40,6 +41,14 @@ export async function PUT(
     if (data.receivedDate) data.receivedDate = new Date(data.receivedDate as string);
     if (data.paymentDueDate) data.paymentDueDate = new Date(data.paymentDueDate as string);
     if (data.paidDate) data.paidDate = new Date(data.paidDate as string);
+
+    // Recalcul priorité auto si paymentDueDate change (sauf BLOQUE/ATTENTE)
+    if (data.paymentDueDate !== undefined) {
+      data.priority = computePriority(
+        data.paymentDueDate as Date | null,
+        (data.priority as string | undefined) ?? existing.priority
+      );
+    }
 
     // Remove fields that should not be updated
     delete data.id;
