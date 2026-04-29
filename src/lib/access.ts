@@ -15,7 +15,7 @@ const ACCESS_MATRIX: Record<string, Record<Module, Action[]>> = {
   COMPTABLE: {
     DASHBOARD: ['READ'],
     BANK_POSITION: ['READ', 'CREATE', 'UPDATE'],
-    RECEIPTS: ['READ', 'CREATE', 'UPDATE'],
+    RECEIPTS: ['READ', 'CREATE', 'UPDATE', 'DELETE'],
     DISBURSEMENTS: ['READ', 'CREATE', 'UPDATE'],
     INVOICES: ['READ', 'CREATE', 'UPDATE'],
     RECURRING_CHARGES: ['READ', 'CREATE', 'UPDATE'],
@@ -26,7 +26,7 @@ const ACCESS_MATRIX: Record<string, Record<Module, Action[]>> = {
   ADV: {
     DASHBOARD: ['READ'],
     BANK_POSITION: ['READ'],
-    RECEIPTS: ['READ', 'CREATE', 'UPDATE'],
+    RECEIPTS: ['READ', 'CREATE', 'UPDATE', 'DELETE'],
     DISBURSEMENTS: ['READ'],
     INVOICES: ['READ', 'CREATE', 'UPDATE'],
     RECURRING_CHARGES: ['READ'],
@@ -37,7 +37,7 @@ const ACCESS_MATRIX: Record<string, Record<Module, Action[]>> = {
   ADV_RESTREINT: {
     DASHBOARD: [],
     BANK_POSITION: [],
-    RECEIPTS: ['READ', 'CREATE', 'UPDATE'],
+    RECEIPTS: ['READ', 'CREATE', 'UPDATE', 'DELETE'],
     DISBURSEMENTS: ['READ', 'CREATE', 'UPDATE'],
     INVOICES: ['READ'],
     RECURRING_CHARGES: [],
@@ -48,7 +48,7 @@ const ACCESS_MATRIX: Record<string, Record<Module, Action[]>> = {
   OPERATEUR: {
     DASHBOARD: [],
     BANK_POSITION: [],
-    RECEIPTS: ['READ', 'CREATE', 'UPDATE'],
+    RECEIPTS: ['READ', 'CREATE', 'UPDATE', 'DELETE'],
     DISBURSEMENTS: ['READ', 'CREATE', 'UPDATE'],
     INVOICES: ['READ'],
     RECURRING_CHARGES: [],
