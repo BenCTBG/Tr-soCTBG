@@ -120,6 +120,7 @@ export default function EncaissementsPage() {
   const [filterEntity, setFilterEntity] = useState('');
   const [filterType, setFilterType] = useState('');
   const [filterStatus, setFilterStatus] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
 
   // Fetch entities
   useEffect(() => {
@@ -321,9 +322,13 @@ export default function EncaissementsPage() {
     - receipts
       .filter((r) => isAvoir(r))
       .reduce((sum, r) => sum + getAmount(r), 0);
+  // Total encaissé = somme de tous les paiements partiels reçus (toutes factures hors avoirs)
   const totalEncaisse = receipts
-    .filter((r) => r.status === 'ENCAISSE' && !isAvoir(r))
-    .reduce((sum, r) => sum + getAmount(r), 0);
+    .filter((r) => !isAvoir(r))
+    .reduce((sum, r) => {
+      const paid = (r.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+      return sum + paid;
+    }, 0);
   const totalEnRetard = receipts
     .filter((r) => r.status === 'EN_RETARD' && !isAvoir(r))
     .reduce((sum, r) => sum + getAmount(r), 0);
@@ -379,7 +384,28 @@ export default function EncaissementsPage() {
         <SummaryCard label="En Retard" value={formatCurrency(totalEnRetard)} borderColor="border-t-error" />
       </div>
 
-      <div className="flex gap-2.5 mb-4">
+      <div className="flex gap-2.5 mb-4 flex-wrap items-center">
+        <div className="relative flex-1 min-w-[250px]">
+          <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-gray-400" fill="none" viewBox="0 0 24 24" stroke="currentColor" strokeWidth={2}>
+            <path strokeLinecap="round" strokeLinejoin="round" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+          </svg>
+          <input
+            type="text"
+            value={searchQuery}
+            onChange={(e) => setSearchQuery(e.target.value)}
+            placeholder="Rechercher un client, n° facture, adresse…"
+            className="w-full pl-9 pr-3 py-2 border border-gray-border rounded-md text-xs bg-white focus:outline-none focus:border-ctbg-red focus:ring-1 focus:ring-ctbg-red/20"
+          />
+          {searchQuery && (
+            <button
+              onClick={() => setSearchQuery('')}
+              className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-400 hover:text-gray-600 p-1"
+              title="Effacer"
+            >
+              ✕
+            </button>
+          )}
+        </div>
         <select value={filterEntity} onChange={(e) => setFilterEntity(e.target.value)}
           className="px-3 py-2 border border-gray-border rounded-md text-xs cursor-pointer bg-white focus:outline-none focus:border-ctbg-red">
           <option value="">Toutes les entités</option>
@@ -422,12 +448,27 @@ export default function EncaissementsPage() {
             </tr>
           </thead>
           <tbody>
-            {receipts.length === 0 ? (
-              <tr>
-                <td colSpan={12} className="p-6 text-center text-gray-text">Aucune facture trouvée</td>
-              </tr>
-            ) : (
-              receipts.map((r) => (
+            {(() => {
+              const q = searchQuery.toLowerCase().trim();
+              const visible = q
+                ? receipts.filter((r) =>
+                    (r.clientName || '').toLowerCase().includes(q) ||
+                    (r.invoiceNumber || '').toLowerCase().includes(q) ||
+                    (r.siteAddress || '').toLowerCase().includes(q) ||
+                    (r.entity?.name || '').toLowerCase().includes(q) ||
+                    (r.observations || '').toLowerCase().includes(q)
+                  )
+                : receipts;
+              if (visible.length === 0) {
+                return (
+                  <tr>
+                    <td colSpan={12} className="p-6 text-center text-gray-text">
+                      {q ? `Aucun résultat pour "${searchQuery}"` : 'Aucune facture trouvée'}
+                    </td>
+                  </tr>
+                );
+              }
+              return visible.map((r) => (
                 <tr
                   key={r.id}
                   className="hover:bg-gray-light transition-colors"
@@ -548,8 +589,8 @@ export default function EncaissementsPage() {
                     </div>
                   </td>
                 </tr>
-              ))
-            )}
+              ));
+            })()}
           </tbody>
         </table>
       </div>
