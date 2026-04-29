@@ -614,12 +614,15 @@ export default function EncaissementsPage() {
             return;
           }
           entry.totalAttendu += amount;
-          if (r.status === 'ENCAISSE') {
-            entry.totalEncaisse += amount;
-          } else if (r.status === 'EN_RETARD') {
-            entry.totalEnRetard += amount;
-          } else if (r.status === 'ATTENDU') {
-            entry.totalEnAttente += amount;
+          // Total encaissé = somme des paiements partiels (peu importe le statut de la facture)
+          const paid = (r.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0);
+          entry.totalEncaisse += paid;
+          // Reste = total - encaissé
+          const reste = amount - paid;
+          if (r.status === 'EN_RETARD') {
+            entry.totalEnRetard += reste;
+          } else if (r.status === 'ATTENDU' && reste > 0) {
+            entry.totalEnAttente += reste;
           }
         });
         const rows = Array.from(entityMap.values());
