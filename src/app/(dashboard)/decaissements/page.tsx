@@ -479,7 +479,7 @@ export default function DecaissementsPage() {
                 .map((ba) => ({ value: ba.id, label: ba.bankName + (ba.label ? ` (${ba.label})` : '') })),
             ]} />
           <FormField label="Fournisseur" value={form.supplier} onChange={setField('supplier')} placeholder="Nom du fournisseur" required />
-          <FormField label="Chantier / Objet" value={form.siteRef} onChange={setField('siteRef')} placeholder="Description" required />
+          <FormField label="Chantier / Objet (optionnel)" value={form.siteRef} onChange={setField('siteRef')} placeholder="Description (facultatif)" />
           <FormField label="Montant TTC" type="number" value={form.amountTtc} onChange={setField('amountTtc')} placeholder="0" required />
           <FormField label="Priorité" value={form.priority} onChange={setField('priority')} required
             options={Object.entries(PRIORITY_LABELS).map(([v, l]) => ({ value: v, label: l }))} />
