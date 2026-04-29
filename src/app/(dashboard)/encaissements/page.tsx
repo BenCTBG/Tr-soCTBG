@@ -312,16 +312,20 @@ export default function EncaissementsPage() {
     }));
   }, []);
 
-  // Summary calculations
+  // Summary calculations - les AVOIR sont déduits, pas additionnés
   const getAmount = (r: Receipt) => Number(r.amountTtc) || 0;
+  const isAvoir = (r: Receipt) => r.type === 'AVOIR';
   const totalAttendu = receipts
-    .filter((r) => r.status === 'ATTENDU')
-    .reduce((sum, r) => sum + getAmount(r), 0);
+    .filter((r) => r.status === 'ATTENDU' && !isAvoir(r))
+    .reduce((sum, r) => sum + getAmount(r), 0)
+    - receipts
+      .filter((r) => isAvoir(r))
+      .reduce((sum, r) => sum + getAmount(r), 0);
   const totalEncaisse = receipts
-    .filter((r) => r.status === 'ENCAISSE')
+    .filter((r) => r.status === 'ENCAISSE' && !isAvoir(r))
     .reduce((sum, r) => sum + getAmount(r), 0);
   const totalEnRetard = receipts
-    .filter((r) => r.status === 'EN_RETARD')
+    .filter((r) => r.status === 'EN_RETARD' && !isAvoir(r))
     .reduce((sum, r) => sum + getAmount(r), 0);
 
   const handleExport = () => {
@@ -434,12 +438,33 @@ export default function EncaissementsPage() {
                   <td className="p-3 border-b border-gray-border cursor-pointer" onClick={() => openEdit(r)}>{r.entity?.name || '-'}</td>
                   <td className="p-3 border-b border-gray-border cursor-pointer" onClick={() => openEdit(r)}>{RECEIPT_TYPE_LABELS[r.type] || r.type}</td>
                   <td className="p-3 border-b border-gray-border cursor-pointer" onClick={() => openEdit(r)}>
-                    {formatCurrency(Number(r.amountTtc))}
-                    {Number(r.amountCee || 0) > 0 && (
-                      <div className="text-xs text-blue-600 mt-0.5">dont CEE : {formatCurrency(Number(r.amountCee))}</div>
+                    {r.type === 'AVOIR' ? (
+                      <span className="text-red-600 font-semibold" title="Avoir : déduit du total attendu">
+                        −{formatCurrency(Number(r.amountTtc))}
+                      </span>
+                    ) : (
+                      <>
+                        {formatCurrency(Number(r.amountTtc))}
+                        {Number(r.amountCee || 0) > 0 && (
+                          <div className="text-xs text-blue-600 mt-0.5">dont CEE : {formatCurrency(Number(r.amountCee))}</div>
+                        )}
+                      </>
                     )}
                   </td>
                   {(() => {
+                    if (r.type === 'AVOIR') {
+                      // Avoirs : pas de notion de payé/restant
+                      return (
+                        <>
+                          <td className="p-3 border-b border-gray-border cursor-pointer" onClick={() => openEdit(r)}>
+                            <span className="text-gray-400">—</span>
+                          </td>
+                          <td className="p-3 border-b border-gray-border cursor-pointer" onClick={() => openEdit(r)}>
+                            <span className="text-gray-400" title="Avoir : déduit du total">—</span>
+                          </td>
+                        </>
+                      );
+                    }
                     const paid = (r.payments || []).reduce((s, p) => s + (Number(p.amount) || 0), 0);
                     const cee = Number(r.amountCee || 0);
                     const hasCeeCall = !!r.invoice; // appel à facturation CEE créé
@@ -484,13 +509,19 @@ export default function EncaissementsPage() {
                     </span>
                   </td>
                   <td className="p-3 border-b border-gray-border">
-                    <button
-                      onClick={(e) => { e.stopPropagation(); openPaymentModal(r); }}
-                      className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors"
-                      title="Enregistrer un paiement"
-                    >
-                      💰 Solde
-                    </button>
+                    {r.type === 'AVOIR' ? (
+                      <span className="text-xs text-gray-400 italic" title="Les avoirs sont déduits automatiquement">
+                        — Avoir —
+                      </span>
+                    ) : (
+                      <button
+                        onClick={(e) => { e.stopPropagation(); openPaymentModal(r); }}
+                        className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors"
+                        title="Enregistrer un paiement"
+                      >
+                        💰 Solde
+                      </button>
+                    )}
                   </td>
                 </tr>
               ))
@@ -511,6 +542,12 @@ export default function EncaissementsPage() {
           const entry = entityMap.get(entityId)!;
           entry.count += 1;
           const amount = Number(r.amountTtc) || 0;
+          if (r.type === 'AVOIR') {
+            // Avoir : déduit du total attendu et du total à encaisser
+            entry.totalAttendu -= amount;
+            entry.totalEnAttente -= amount;
+            return;
+          }
           entry.totalAttendu += amount;
           if (r.status === 'ENCAISSE') {
             entry.totalEncaisse += amount;

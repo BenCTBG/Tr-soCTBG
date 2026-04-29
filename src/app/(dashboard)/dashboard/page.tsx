@@ -62,6 +62,7 @@ export default async function DashboardPage() {
   const expectedReceipts = Number(expectedAgg._sum.amountTtc || 0);
 
   // ===== 3 notions distinctes : CA, À encaisser, Encaissé =====
+  // Les AVOIR sont DÉDUITS du CA et du À encaisser (jamais ajoutés)
   const allReceipts = await prisma.receipt.findMany({
     include: { payments: true, invoice: true },
   });
@@ -72,6 +73,15 @@ export default async function DashboardPage() {
     const ttc = Number(r.amountTtc);
     const cee = Number(r.amountCee || 0);
     const paid = r.payments.reduce((s, p) => s + Number(p.amount), 0);
+
+    if (r.type === 'AVOIR') {
+      // Avoir client = crédit accordé → déduit du CA et du à encaisser
+      chiffreAffaires -= ttc;
+      aEncaisser -= ttc;
+      // Pas de paiement à compter
+      continue;
+    }
+
     chiffreAffaires += ttc;
     encaisse += paid;
     const base = (cee > 0 && !r.invoice) ? ttc - cee : ttc;
@@ -145,15 +155,33 @@ export default async function DashboardPage() {
     });
   }
 
-  // --- Per-entity expected receipts (status ATTENDU) ---
+  // --- Per-entity expected receipts (status ATTENDU, hors AVOIR) ---
+  // Les avoirs sont DÉDUITS du total attendu (et non additionnés)
   const receiptsPerEntity = await prisma.receipt.groupBy({
     by: ['entityId'],
-    where: { status: 'ATTENDU' },
+    where: { status: 'ATTENDU', type: { not: 'AVOIR' } },
     _sum: { amountTtc: true },
   });
-  const receiptsMap = new Map(
-    receiptsPerEntity.map((r) => [r.entityId, Number(r._sum.amountTtc || 0)])
+  const avoirsPerEntity = await prisma.receipt.groupBy({
+    by: ['entityId'],
+    where: { type: 'AVOIR' },
+    _sum: { amountTtc: true },
+  });
+  const avoirsMap = new Map(
+    avoirsPerEntity.map((a) => [a.entityId, Number(a._sum.amountTtc || 0)])
   );
+  const receiptsMap = new Map(
+    receiptsPerEntity.map((r) => [
+      r.entityId,
+      Number(r._sum.amountTtc || 0) - (avoirsMap.get(r.entityId) || 0),
+    ])
+  );
+  // Entities with only avoirs (no expected receipts)
+  for (const [entityId, avoirAmount] of avoirsMap) {
+    if (!receiptsMap.has(entityId)) {
+      receiptsMap.set(entityId, -avoirAmount);
+    }
+  }
 
   // --- Per-entity pending disbursements (A_PAYER, EN_ATTENTE_DG, VALIDE_DG) ---
   const disbursementsPerEntity = await prisma.disbursement.groupBy({

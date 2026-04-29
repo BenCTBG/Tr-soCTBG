@@ -93,6 +93,14 @@ export async function GET() {
       const ttc = Number(r.amountTtc);
       const cee = Number(r.amountCee || 0);
       const paid = r.payments.reduce((s, p) => s + Number(p.amount), 0);
+
+      if (r.type === 'AVOIR') {
+        // Avoir client = crédit accordé → déduit du CA et du à encaisser
+        chiffreAffaires -= ttc;
+        aEncaisser -= ttc;
+        continue;
+      }
+
       chiffreAffaires += ttc;
       encaisse += paid;
       // Si part CEE mais pas d'appel créé, on l'exclut du "à encaisser"
