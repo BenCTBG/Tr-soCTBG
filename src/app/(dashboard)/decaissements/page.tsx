@@ -336,7 +336,6 @@ export default function DecaissementsPage() {
               <th className="bg-gray-light p-3 text-left font-semibold text-gray-dark border-b border-gray-border text-xs uppercase tracking-wide">Fournisseur</th>
               <th className="bg-gray-light p-3 text-left font-semibold text-gray-dark border-b border-gray-border text-xs uppercase tracking-wide">Entité</th>
               <th className="bg-gray-light p-3 text-left font-semibold text-gray-dark border-b border-gray-border text-xs uppercase tracking-wide">Compte</th>
-              <th className="bg-gray-light p-3 text-left font-semibold text-gray-dark border-b border-gray-border text-xs uppercase tracking-wide">Chantier/Objet</th>
               <th className="bg-gray-light p-3 text-left font-semibold text-gray-dark border-b border-gray-border text-xs uppercase tracking-wide">Montant TTC</th>
               <th className="bg-gray-light p-3 text-left font-semibold text-gray-dark border-b border-gray-border text-xs uppercase tracking-wide">Priorité</th>
               <th className="bg-gray-light p-3 text-left font-semibold text-gray-dark border-b border-gray-border text-xs uppercase tracking-wide">Statut</th>
@@ -345,7 +344,7 @@ export default function DecaissementsPage() {
           <tbody>
             {disbursements.length === 0 ? (
               <tr>
-                <td colSpan={10} className="p-6 text-center text-gray-text">Aucun décaissement trouvé</td>
+                <td colSpan={9} className="p-6 text-center text-gray-text">Aucun décaissement trouvé</td>
               </tr>
             ) : (
               disbursements.map((d) => (
@@ -373,7 +372,6 @@ export default function DecaissementsPage() {
                   <td className="p-3 border-b border-gray-border">{d.supplier}</td>
                   <td className="p-3 border-b border-gray-border">{d.entity?.name || '-'}</td>
                   <td className="p-3 border-b border-gray-border text-xs text-gray-text">{d.bankAccount?.bankName || '-'}</td>
-                  <td className="p-3 border-b border-gray-border">{d.siteRef || '-'}</td>
                   <td className="p-3 border-b border-gray-border">{formatCurrency(Number(d.amountTtc))}</td>
                   <td className="p-3 border-b border-gray-border">
                     <PriorityBadge priority={d.priority} label={PRIORITY_LABELS[d.priority] || d.priority} />
