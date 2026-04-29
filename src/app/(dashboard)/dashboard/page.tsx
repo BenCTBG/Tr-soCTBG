@@ -23,21 +23,80 @@ export default async function DashboardPage() {
 
   // Get all entities
   const entities = await prisma.entity.findMany();
+  const entityIds = entities.map((e) => e.id);
 
-  // Get latest bank position for each entity
-  const latestPositions = await Promise.all(
-    entities.map(async (entity) => {
-      const position = await prisma.bankPosition.findFirst({
-        where: { entityId: entity.id },
-        orderBy: { date: 'desc' },
-      });
-      return {
-        entityName: entity.name,
-        balance: position ? Number(position.balance) : 0,
-        alertLevel: position?.alertLevel || 'NORMAL',
-      };
-    })
+  // ===== Toutes les requêtes indépendantes lancées EN PARALLÈLE =====
+  const [
+    latestPositionsRaw,
+    urgentInvoices,
+    expectedAgg,
+    allReceipts,
+    orphanInvoices,
+    urgentUnpaid,
+    overdueReceipts,
+    todayPositionCount,
+    receiptsPerEntity,
+    avoirsPerEntity,
+    disbursementsPerEntity,
+  ] = await Promise.all([
+    // 1 query unique pour récupérer les dernières positions de toutes les entités
+    prisma.$queryRaw<Array<{ entity_id: string; balance: string | number; alert_level: string; variation: string | number }>>`
+      SELECT DISTINCT ON (entity_id) entity_id, balance, alert_level, variation
+      FROM bank_positions
+      WHERE entity_id = ANY(${entityIds}::text[])
+      ORDER BY entity_id, date DESC
+    `,
+    prisma.disbursement.count({ where: { priority: 'IMMEDIAT', status: 'A_PAYER' } }),
+    prisma.receipt.aggregate({
+      where: { status: 'ATTENDU', expectedDate: { gte: today, lte: in7Days } },
+      _sum: { amountTtc: true },
+    }),
+    prisma.receipt.findMany({ include: { payments: true, invoice: true } }),
+    prisma.invoice.findMany({ where: { receiptId: null, status: { not: 'PAYEE' } }, include: { payments: true } }),
+    prisma.disbursement.findMany({
+      where: { priority: 'IMMEDIAT', status: 'A_PAYER' },
+      include: { entity: true },
+      take: 5,
+    }),
+    prisma.receipt.findMany({
+      where: { status: 'ATTENDU', expectedDate: { lt: today } },
+      include: { entity: true },
+      take: 5,
+    }),
+    prisma.bankPosition.count({ where: { date: today } }),
+    prisma.receipt.groupBy({
+      by: ['entityId'],
+      where: { status: 'ATTENDU', type: { not: 'AVOIR' } },
+      _sum: { amountTtc: true },
+    }),
+    prisma.receipt.groupBy({
+      by: ['entityId'],
+      where: { type: 'AVOIR' },
+      _sum: { amountTtc: true },
+    }),
+    prisma.disbursement.groupBy({
+      by: ['entityId'],
+      where: { status: { in: ['A_PAYER', 'EN_ATTENTE_DG', 'VALIDE_DG'] } },
+      _sum: { amountTtc: true },
+    }),
+  ]);
+
+  // ===== Build positions map from raw query =====
+  const positionsByEntity = new Map(
+    latestPositionsRaw.map((r) => [
+      r.entity_id,
+      { balance: Number(r.balance), alertLevel: r.alert_level, variation: Number(r.variation) },
+    ])
   );
+
+  const latestPositions = entities.map((entity) => {
+    const p = positionsByEntity.get(entity.id);
+    return {
+      entityName: entity.name,
+      balance: p?.balance ?? 0,
+      alertLevel: p?.alertLevel ?? 'NORMAL',
+    };
+  });
 
   const totalTreasury = latestPositions.reduce((sum, p) => sum + p.balance, 0);
   const entitiesInAlert = latestPositions.filter((p) => p.alertLevel !== 'NORMAL').length;
@@ -46,26 +105,7 @@ export default async function DashboardPage() {
     .map((p) => p.entityName)
     .join(', ');
 
-  // Urgent invoices
-  const urgentInvoices = await prisma.disbursement.count({
-    where: { priority: 'IMMEDIAT', status: 'A_PAYER' },
-  });
-
-  // Expected receipts within 7 days
-  const expectedAgg = await prisma.receipt.aggregate({
-    where: {
-      status: 'ATTENDU',
-      expectedDate: { gte: today, lte: in7Days },
-    },
-    _sum: { amountTtc: true },
-  });
   const expectedReceipts = Number(expectedAgg._sum.amountTtc || 0);
-
-  // ===== 3 notions distinctes : CA, À encaisser, Encaissé =====
-  // Les AVOIR sont DÉDUITS du CA et du À encaisser (jamais ajoutés)
-  const allReceipts = await prisma.receipt.findMany({
-    include: { payments: true, invoice: true },
-  });
   let chiffreAffaires = 0;
   let aEncaisser = 0;
   let encaisse = 0;
@@ -87,10 +127,6 @@ export default async function DashboardPage() {
     const base = (cee > 0 && !r.invoice) ? ttc - cee : ttc;
     aEncaisser += Math.max(0, base - paid);
   }
-  const orphanInvoices = await prisma.invoice.findMany({
-    where: { receiptId: null, status: { not: 'PAYEE' } },
-    include: { payments: true },
-  });
   for (const inv of orphanInvoices) {
     const ttc = Number(inv.amountTtc);
     const paid = inv.payments.reduce((s, p) => s + Number(p.amount), 0);
@@ -103,11 +139,6 @@ export default async function DashboardPage() {
   const alerts: { variant: 'rouge' | 'orange' | 'vert'; icon: string; message: string }[] = [];
 
   // Urgent unpaid
-  const urgentUnpaid = await prisma.disbursement.findMany({
-    where: { priority: 'IMMEDIAT', status: 'A_PAYER' },
-    include: { entity: true },
-    take: 5,
-  });
   for (const d of urgentUnpaid) {
     alerts.push({
       variant: 'rouge',
@@ -117,11 +148,6 @@ export default async function DashboardPage() {
   }
 
   // Overdue receipts
-  const overdueReceipts = await prisma.receipt.findMany({
-    where: { status: 'ATTENDU', expectedDate: { lt: today } },
-    include: { entity: true },
-    take: 5,
-  });
   for (const r of overdueReceipts) {
     alerts.push({
       variant: 'orange',
@@ -131,7 +157,6 @@ export default async function DashboardPage() {
   }
 
   // Check if positions were entered today
-  const todayPositionCount = await prisma.bankPosition.count({ where: { date: today } });
   if (todayPositionCount === entities.length && entities.length > 0) {
     alerts.push({
       variant: 'vert',
@@ -157,16 +182,6 @@ export default async function DashboardPage() {
 
   // --- Per-entity expected receipts (status ATTENDU, hors AVOIR) ---
   // Les avoirs sont DÉDUITS du total attendu (et non additionnés)
-  const receiptsPerEntity = await prisma.receipt.groupBy({
-    by: ['entityId'],
-    where: { status: 'ATTENDU', type: { not: 'AVOIR' } },
-    _sum: { amountTtc: true },
-  });
-  const avoirsPerEntity = await prisma.receipt.groupBy({
-    by: ['entityId'],
-    where: { type: 'AVOIR' },
-    _sum: { amountTtc: true },
-  });
   const avoirsMap = new Map(
     avoirsPerEntity.map((a) => [a.entityId, Number(a._sum.amountTtc || 0)])
   );
@@ -184,45 +199,35 @@ export default async function DashboardPage() {
   }
 
   // --- Per-entity pending disbursements (A_PAYER, EN_ATTENTE_DG, VALIDE_DG) ---
-  const disbursementsPerEntity = await prisma.disbursement.groupBy({
-    by: ['entityId'],
-    where: { status: { in: ['A_PAYER', 'EN_ATTENTE_DG', 'VALIDE_DG'] } },
-    _sum: { amountTtc: true },
-  });
   const disbursementsMap = new Map(
     disbursementsPerEntity.map((d) => [d.entityId, Number(d._sum.amountTtc || 0)])
   );
 
-  // --- Build enriched entity data for the table ---
-  const entityDetails = await Promise.all(
-    entities.map(async (entity) => {
-      const position = await prisma.bankPosition.findFirst({
-        where: { entityId: entity.id },
-        orderBy: { date: 'desc' },
-      });
-      const balance = position ? Number(position.balance) : 0;
-      const variation = position ? Number(position.variation) : 0;
-      const alertLevel = position?.alertLevel || 'NORMAL';
-      const encAttendus = receiptsMap.get(entity.id) || 0;
-      const decAVenir = disbursementsMap.get(entity.id) || 0;
-      const soldePrevisionnel = balance + encAttendus - decAVenir;
+  // --- Build enriched entity data for the table (zero query, réutilise positionsByEntity) ---
+  const entityDetails = entities.map((entity) => {
+    const p = positionsByEntity.get(entity.id);
+    const balance = p?.balance ?? 0;
+    const variation = p?.variation ?? 0;
+    const alertLevel = p?.alertLevel ?? 'NORMAL';
+    const encAttendus = receiptsMap.get(entity.id) || 0;
+    const decAVenir = disbursementsMap.get(entity.id) || 0;
+    const soldePrevisionnel = balance + encAttendus - decAVenir;
 
-      let tendance: 'hausse' | 'baisse' | 'stable' = 'stable';
-      if (variation > 0) tendance = 'hausse';
-      else if (variation < 0) tendance = 'baisse';
+    let tendance: 'hausse' | 'baisse' | 'stable' = 'stable';
+    if (variation > 0) tendance = 'hausse';
+    else if (variation < 0) tendance = 'baisse';
 
-      return {
-        entityName: entity.name,
-        balance,
-        variation,
-        tendance,
-        alertLevel,
-        encAttendus,
-        decAVenir,
-        soldePrevisionnel,
-      };
-    })
-  );
+    return {
+      entityName: entity.name,
+      balance,
+      variation,
+      tendance,
+      alertLevel,
+      encAttendus,
+      decAVenir,
+      soldePrevisionnel,
+    };
+  });
 
   // --- Lowest balance entity ---
   const lowestEntity = entityDetails.reduce(
