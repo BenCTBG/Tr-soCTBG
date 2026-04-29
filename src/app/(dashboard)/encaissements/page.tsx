@@ -513,19 +513,37 @@ export default function EncaissementsPage() {
                     </span>
                   </td>
                   <td className="p-3 border-b border-gray-border">
-                    {r.type === 'AVOIR' ? (
-                      <span className="text-xs text-gray-400 italic" title="Les avoirs sont déduits automatiquement">
-                        — Avoir —
-                      </span>
-                    ) : (
+                    <div className="flex items-center gap-1.5">
+                      {r.type !== 'AVOIR' && (
+                        <button
+                          onClick={(e) => { e.stopPropagation(); openPaymentModal(r); }}
+                          className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors"
+                          title="Enregistrer un paiement"
+                        >
+                          💰 Solde
+                        </button>
+                      )}
                       <button
-                        onClick={(e) => { e.stopPropagation(); openPaymentModal(r); }}
-                        className="px-2 py-1 bg-green-600 text-white text-xs rounded hover:bg-green-700 transition-colors"
-                        title="Enregistrer un paiement"
+                        onClick={async (e) => {
+                          e.stopPropagation();
+                          if (!confirm(`Supprimer définitivement la facture ${r.invoiceNumber} (${r.clientName}) ?`)) return;
+                          try {
+                            const res = await fetch(`/api/receipts/${r.id}`, { method: 'DELETE' });
+                            if (res.ok) {
+                              fetchReceipts();
+                            } else {
+                              alert('Erreur lors de la suppression');
+                            }
+                          } catch {
+                            alert('Erreur réseau');
+                          }
+                        }}
+                        className="px-2 py-1 bg-red-600 text-white text-xs rounded hover:bg-red-700 transition-colors"
+                        title="Supprimer la facture"
                       >
-                        💰 Solde
+                        🗑️
                       </button>
-                    )}
+                    </div>
                   </td>
                 </tr>
               ))
