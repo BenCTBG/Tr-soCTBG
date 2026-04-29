@@ -1,6 +1,7 @@
 'use client';
 
 import { useState, useEffect, useCallback } from 'react';
+import { useSearchParams } from 'next/navigation';
 import SummaryCard from '@/components/ui/SummaryCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import PriorityBadge from '@/components/ui/PriorityBadge';
@@ -97,10 +98,11 @@ export default function DecaissementsPage() {
   const [cbImportResult, setCbImportResult] = useState<{ imported: number; duplicates: number } | null>(null);
   const [cbParsing, setCbParsing] = useState(false);
 
-  // Filters
-  const [filterEntity, setFilterEntity] = useState('');
-  const [filterPriority, setFilterPriority] = useState('');
-  const [filterStatus, setFilterStatus] = useState('');
+  // Filters - initialised from URL query params (e.g. dashboard "Factures urgentes" link)
+  const searchParams = useSearchParams();
+  const [filterEntity, setFilterEntity] = useState(searchParams.get('entity') || '');
+  const [filterPriority, setFilterPriority] = useState(searchParams.get('priority') || '');
+  const [filterStatus, setFilterStatus] = useState(searchParams.get('status') || '');
 
   // Fetch entities + bank accounts
   useEffect(() => {

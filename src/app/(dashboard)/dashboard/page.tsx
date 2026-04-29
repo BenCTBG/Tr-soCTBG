@@ -238,8 +238,9 @@ export default async function DashboardPage() {
         <KpiCard
           label="Factures Urgentes"
           value={String(urgentInvoices)}
-          subtitle="À traiter aujourd'hui"
+          subtitle="À traiter aujourd'hui — voir la liste"
           variant="red"
+          href="/decaissements?priority=IMMEDIAT&status=A_PAYER"
         />
         <KpiCard
           label="Solde le plus bas (entité)"
