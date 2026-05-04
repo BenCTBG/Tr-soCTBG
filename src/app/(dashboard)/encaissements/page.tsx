@@ -159,6 +159,7 @@ export default function EncaissementsPage() {
     if (filterEntity) params.set('entity_id', filterEntity);
     if (filterType) params.set('type', filterType);
     if (filterStatus) params.set('status', filterStatus);
+    params.set('limit', '10000');
     try {
       const res = await fetch(`/api/receipts?${params.toString()}`);
       if (res.ok) {

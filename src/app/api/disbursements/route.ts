@@ -27,7 +27,7 @@ export async function GET(request: Request) {
   const dateFrom = searchParams.get('date_from');
   const dateTo = searchParams.get('date_to');
   const page = Math.max(1, parseInt(searchParams.get('page') || '1', 10));
-  const limit = Math.max(1, Math.min(100, parseInt(searchParams.get('limit') || '50', 10)));
+  const limit = Math.max(1, Math.min(10000, parseInt(searchParams.get('limit') || '10000', 10)));
 
   try {
     const where: Record<string, unknown> = {};
