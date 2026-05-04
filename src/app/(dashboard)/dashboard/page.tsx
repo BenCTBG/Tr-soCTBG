@@ -288,7 +288,7 @@ export default async function DashboardPage() {
         <KpiCard
           label="Chiffre d'Affaires"
           value={formatCurrency(chiffreAffaires)}
-          subtitle="Σ factures clients TTC − avoirs + appels CEE indépendants"
+          subtitle="Total facturé (CEE inclus, avoirs déduits)"
           variant="default"
         />
         <KpiCard
