@@ -27,6 +27,8 @@ interface Receipt {
   clientName: string;
   entity: { id: string; name: string };
   entityId: string;
+  bankAccountId: string | null;
+  bankAccount: { id: string; bankName: string; label: string | null } | null;
   siteAddress: string | null;
   department: string | null;
   type: string;
@@ -55,6 +57,7 @@ interface InvoicePayment {
 const emptyForm = {
   expectedDate: '',
   entityId: '',
+  bankAccountId: '',
   invoiceNumber: '',
   clientName: '',
   siteAddress: '',
@@ -94,9 +97,18 @@ function toDateInput(val: string | null | undefined): string {
   return val.substring(0, 10);
 }
 
+interface BankAccountData {
+  id: string;
+  entityId: string;
+  bankName: string;
+  label: string | null;
+  isDefault: boolean;
+}
+
 export default function EncaissementsPage() {
   const [receipts, setReceipts] = useState<Receipt[]>([]);
   const [entities, setEntities] = useState<EntityData[]>([]);
+  const [bankAccounts, setBankAccounts] = useState<BankAccountData[]>([]);
   const [modalOpen, setModalOpen] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
 
@@ -122,7 +134,7 @@ export default function EncaissementsPage() {
   const [filterStatus, setFilterStatus] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
 
-  // Fetch entities
+  // Fetch entities + bank accounts
   useEffect(() => {
     fetch('/api/entities')
       .then((r) => r.json())
@@ -133,6 +145,11 @@ export default function EncaissementsPage() {
           setForm((prev) => ({ ...prev, entityId: list[0].id }));
         }
       })
+      .catch(() => {});
+
+    fetch('/api/bank-accounts?active=true')
+      .then((r) => r.json())
+      .then((json) => setBankAccounts(json.data || []))
       .catch(() => {});
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -172,6 +189,7 @@ export default function EncaissementsPage() {
     setForm({
       expectedDate: toDateInput(r.expectedDate),
       entityId: r.entityId,
+      bankAccountId: r.bankAccountId || '',
       invoiceNumber: r.invoiceNumber,
       clientName: r.clientName,
       siteAddress: r.siteAddress || '',
@@ -266,6 +284,7 @@ export default function EncaissementsPage() {
       const payload = {
         expectedDate: form.expectedDate,
         entityId: form.entityId,
+        bankAccountId: form.bankAccountId || undefined,
         invoiceNumber: form.invoiceNumber,
         clientName: form.clientName,
         siteAddress: form.siteAddress || undefined,
@@ -683,8 +702,20 @@ export default function EncaissementsPage() {
             <InvoiceUploadZone entities={entities} onExtracted={handleOCRExtracted} mode="encaissement" />
           )}
           <FormField label="Date Prévue" type="date" value={form.expectedDate} onChange={setField('expectedDate')} required />
-          <FormField label="Entité" value={form.entityId} onChange={setField('entityId')} required
+          <FormField label="Entité" value={form.entityId} onChange={(val) => {
+            setField('entityId')(val);
+            // Auto-select default bank account for this entity
+            const defaultBank = bankAccounts.find((ba) => ba.entityId === val && ba.isDefault);
+            setField('bankAccountId')(defaultBank ? defaultBank.id : '');
+          }} required
             options={entities.map((e) => ({ value: e.id, label: e.name }))} />
+          <FormField label="Compte à créditer" value={form.bankAccountId} onChange={setField('bankAccountId')}
+            options={[
+              { value: '', label: '-- Non spécifié --' },
+              ...bankAccounts
+                .filter((ba) => ba.entityId === form.entityId)
+                .map((ba) => ({ value: ba.id, label: ba.bankName + (ba.label ? ` (${ba.label})` : '') })),
+            ]} />
           <FormField label="N° Facture" value={form.invoiceNumber} onChange={setField('invoiceNumber')} placeholder="FAC-2026-001" required />
           <FormField label="Client / Nom" value={form.clientName} onChange={setField('clientName')} placeholder="Nom du client" required />
           <FormField label="Adresse Chantier" value={form.siteAddress} onChange={setField('siteAddress')} placeholder="Adresse du chantier" />

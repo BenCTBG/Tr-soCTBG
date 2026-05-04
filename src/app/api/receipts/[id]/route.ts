@@ -41,6 +41,11 @@ export async function PUT(
       data.amountCee = null;
     }
 
+    // Normalize bankAccountId (empty string → null)
+    if (data.bankAccountId === '' || data.bankAccountId === undefined) {
+      data.bankAccountId = null;
+    }
+
     // Parse date fields
     if (data.expectedDate) data.expectedDate = new Date(data.expectedDate as string);
     if (data.filingDate) data.filingDate = new Date(data.filingDate as string);

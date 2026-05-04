@@ -3,6 +3,15 @@ import { authOptions } from '@/lib/auth';
 import { prisma } from '@/lib/prisma';
 
 export async function POST() {
+  // Désactivé en production pour éviter la suppression accidentelle des données.
+  // Réactiver uniquement en local en mettant ENABLE_DEMO_RESET=true dans .env
+  if (process.env.ENABLE_DEMO_RESET !== 'true') {
+    return Response.json(
+      { error: { code: 'DISABLED', message: 'Le mode démo est désactivé en production pour protéger vos données' } },
+      { status: 403 }
+    );
+  }
+
   const session = await getServerSession(authOptions);
   if (!session || session.user.role !== 'ADMIN') {
     return Response.json(
@@ -293,6 +302,14 @@ export async function POST() {
 }
 
 export async function DELETE() {
+  // Désactivé en production pour éviter la suppression accidentelle des données.
+  if (process.env.ENABLE_DEMO_RESET !== 'true') {
+    return Response.json(
+      { error: { code: 'DISABLED', message: 'Le mode démo est désactivé en production pour protéger vos données' } },
+      { status: 403 }
+    );
+  }
+
   const session = await getServerSession(authOptions);
   if (!session || session.user.role !== 'ADMIN') {
     return Response.json(

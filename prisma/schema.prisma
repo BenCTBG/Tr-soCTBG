@@ -124,6 +124,7 @@ model BankAccount {
   positions     BankPosition[]
   disbursements Disbursement[]
   invoices      Invoice[]
+  receipts      Receipt[]
 
   @@map("bank_accounts")
 }
@@ -152,6 +153,7 @@ model Receipt {
   id            String        @id @default(uuid())
   expectedDate  DateTime      @map("expected_date") @db.Date
   entityId      String        @map("entity_id")
+  bankAccountId String?       @map("bank_account_id")
   invoiceNumber String        @map("invoice_number")
   clientName    String        @map("client_name")
   siteAddress   String?       @map("site_address")
@@ -169,10 +171,11 @@ model Receipt {
   createdAt     DateTime      @default(now()) @map("created_at")
   updatedAt     DateTime      @updatedAt @map("updated_at")
 
-  entity   Entity            @relation(fields: [entityId], references: [id])
-  user     User              @relation(fields: [createdBy], references: [id])
-  invoice  Invoice?
-  payments InvoicePayment[]
+  entity      Entity            @relation(fields: [entityId], references: [id])
+  bankAccount BankAccount?     @relation(fields: [bankAccountId], references: [id])
+  user        User              @relation(fields: [createdBy], references: [id])
+  invoice     Invoice?
+  payments    InvoicePayment[]
 
   @@index([entityId])
   @@index([status])
