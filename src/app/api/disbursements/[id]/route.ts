@@ -16,7 +16,10 @@ export async function PUT(
     );
   }
 
-  if (!checkAccess(session.user.role, 'DISBURSEMENTS', 'UPDATE')) {
+  const canUpdateAll = checkAccess(session.user.role, 'DISBURSEMENTS', 'UPDATE');
+  const canUpdateBank = checkAccess(session.user.role, 'DISBURSEMENTS', 'UPDATE_BANK');
+
+  if (!canUpdateAll && !canUpdateBank) {
     return Response.json(
       { error: { code: 'FORBIDDEN', message: 'Accès refusé' } },
       { status: 403 }
@@ -35,7 +38,12 @@ export async function PUT(
     }
 
     const body = await request.json();
-    const data: Record<string, unknown> = { ...body };
+    let data: Record<string, unknown> = { ...body };
+
+    // Si l'utilisateur n'a que UPDATE_BANK (pas UPDATE complet), ne garder que bankAccountId
+    if (!canUpdateAll && canUpdateBank) {
+      data = { bankAccountId: data.bankAccountId ?? null };
+    }
 
     // Parse date fields
     if (data.receivedDate) data.receivedDate = new Date(data.receivedDate as string);

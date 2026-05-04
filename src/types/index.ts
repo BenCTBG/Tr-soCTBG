@@ -1,7 +1,7 @@
 import type { Role } from '@/generated/prisma/enums';
 
 export type Module = 'DASHBOARD' | 'BANK_POSITION' | 'RECEIPTS' | 'DISBURSEMENTS' | 'INVOICES' | 'RECURRING_CHARGES' | 'FORECAST' | 'SETTINGS' | 'NOTIFICATIONS';
-export type Action = 'READ' | 'CREATE' | 'UPDATE' | 'DELETE' | 'VALIDATE';
+export type Action = 'READ' | 'CREATE' | 'UPDATE' | 'UPDATE_BANK' | 'DELETE' | 'VALIDATE';
 
 export interface SessionUser {
   id: string;

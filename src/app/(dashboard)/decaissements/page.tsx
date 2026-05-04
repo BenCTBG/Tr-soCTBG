@@ -2,6 +2,7 @@
 
 import { useState, useEffect, useCallback } from 'react';
 import { useSearchParams } from 'next/navigation';
+import { useSession } from 'next-auth/react';
 import SummaryCard from '@/components/ui/SummaryCard';
 import StatusBadge from '@/components/ui/StatusBadge';
 import PriorityBadge from '@/components/ui/PriorityBadge';
@@ -82,6 +83,11 @@ function getISOWeek(dateStr: string): string {
 }
 
 export default function DecaissementsPage() {
+  const { data: session } = useSession();
+  const userRole = session?.user?.role;
+  // Si l'utilisateur n'a que le droit de modifier le compte (pas tout le décaissement)
+  const onlyBankEdit = userRole === 'ADV';
+
   const [disbursements, setDisbursements] = useState<Disbursement[]>([]);
   const [entities, setEntities] = useState<EntityData[]>([]);
   const [bankAccounts, setBankAccounts] = useState<BankAccountData[]>([]);
@@ -463,13 +469,18 @@ export default function DecaissementsPage() {
               <a href={form.fileUrl} target="_blank" rel="noopener noreferrer" className="text-ctbg-red hover:underline">Voir le fichier</a>
             </div>
           )}
-          <FormField label="Date Réception" type="date" value={form.receivedDate} onChange={setField('receivedDate')} required />
+          {onlyBankEdit && (
+            <div className="mb-4 px-3 py-2 bg-blue-50 border border-blue-200 rounded-md text-xs text-blue-700">
+              ℹ️ Vous pouvez modifier uniquement le compte à débiter sur cette facture.
+            </div>
+          )}
+          <FormField label="Date Réception" type="date" value={form.receivedDate} onChange={setField('receivedDate')} required disabled={onlyBankEdit} />
           <FormField label="Entité" value={form.entityId} onChange={(val) => {
             setField('entityId')(val);
             // Auto-select default bank account for this entity
             const defaultBank = bankAccounts.find((ba) => ba.entityId === val && ba.isDefault);
             setField('bankAccountId')(defaultBank ? defaultBank.id : '');
-          }} required
+          }} required disabled={onlyBankEdit}
             options={entities.map((e) => ({ value: e.id, label: e.name }))} />
           <FormField label="Compte à débiter" value={form.bankAccountId} onChange={setField('bankAccountId')}
             options={[
@@ -478,22 +489,22 @@ export default function DecaissementsPage() {
                 .filter((ba) => ba.entityId === form.entityId)
                 .map((ba) => ({ value: ba.id, label: ba.bankName + (ba.label ? ` (${ba.label})` : '') })),
             ]} />
-          <FormField label="Fournisseur" value={form.supplier} onChange={setField('supplier')} placeholder="Nom du fournisseur" required />
-          <FormField label="Chantier / Objet (optionnel)" value={form.siteRef} onChange={setField('siteRef')} placeholder="Description (facultatif)" />
-          <FormField label="Montant TTC" type="number" value={form.amountTtc} onChange={setField('amountTtc')} placeholder="0" required />
-          <FormField label="Priorité" value={form.priority} onChange={setField('priority')} required
+          <FormField label="Fournisseur" value={form.supplier} onChange={setField('supplier')} placeholder="Nom du fournisseur" required disabled={onlyBankEdit} />
+          <FormField label="Chantier / Objet (optionnel)" value={form.siteRef} onChange={setField('siteRef')} placeholder="Description (facultatif)" disabled={onlyBankEdit} />
+          <FormField label="Montant TTC" type="number" value={form.amountTtc} onChange={setField('amountTtc')} placeholder="0" required disabled={onlyBankEdit} />
+          <FormField label="Priorité" value={form.priority} onChange={setField('priority')} required disabled={onlyBankEdit}
             options={Object.entries(PRIORITY_LABELS).map(([v, l]) => ({ value: v, label: l }))} />
-          <FormField label="Mode de Règlement" value={form.paymentMethod} onChange={setField('paymentMethod')}
+          <FormField label="Mode de Règlement" value={form.paymentMethod} onChange={setField('paymentMethod')} disabled={onlyBankEdit}
             options={[{ value: '', label: '-- Non spécifié --' }, ...Object.entries(PAYMENT_METHOD_LABELS).map(([v, l]) => ({ value: v, label: l }))]} />
-          <FormField label="Date d'Échéance" type="date" value={form.paymentDueDate} onChange={setField('paymentDueDate')} />
+          <FormField label="Date d'Échéance" type="date" value={form.paymentDueDate} onChange={setField('paymentDueDate')} disabled={onlyBankEdit} />
           {form.paymentTerms && (
             <div className="mb-4 px-3 py-2 bg-blue-50 border border-blue-200 rounded-md text-xs text-blue-700">
               Conditions détectées : <strong>{form.paymentTerms}</strong>
             </div>
           )}
-          <FormField label="Statut" value={form.status} onChange={setField('status')} required
+          <FormField label="Statut" value={form.status} onChange={setField('status')} required disabled={onlyBankEdit}
             options={Object.entries(STATUS_LABELS_DISBURSEMENT).map(([v, l]) => ({ value: v, label: l }))} />
-          <FormField label="Observations" type="textarea" value={form.observations} onChange={setField('observations')} placeholder="Notes..." />
+          <FormField label="Observations" type="textarea" value={form.observations} onChange={setField('observations')} placeholder="Notes..." disabled={onlyBankEdit} />
           <div className="flex gap-2.5 mt-5">
             <button type="submit" className="px-4 py-2.5 bg-ctbg-red text-white border-none rounded-md text-sm font-semibold uppercase tracking-wide hover:bg-ctbg-red-hover">
               {isEditing ? 'Mettre à jour' : 'Enregistrer'}
