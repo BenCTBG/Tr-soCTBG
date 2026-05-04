@@ -702,20 +702,8 @@ export default function EncaissementsPage() {
             <InvoiceUploadZone entities={entities} onExtracted={handleOCRExtracted} mode="encaissement" />
           )}
           <FormField label="Date Prévue" type="date" value={form.expectedDate} onChange={setField('expectedDate')} required />
-          <FormField label="Entité" value={form.entityId} onChange={(val) => {
-            setField('entityId')(val);
-            // Auto-select default bank account for this entity
-            const defaultBank = bankAccounts.find((ba) => ba.entityId === val && ba.isDefault);
-            setField('bankAccountId')(defaultBank ? defaultBank.id : '');
-          }} required
+          <FormField label="Entité" value={form.entityId} onChange={setField('entityId')} required
             options={entities.map((e) => ({ value: e.id, label: e.name }))} />
-          <FormField label="Compte à créditer" value={form.bankAccountId} onChange={setField('bankAccountId')}
-            options={[
-              { value: '', label: '-- Non spécifié --' },
-              ...bankAccounts
-                .filter((ba) => ba.entityId === form.entityId)
-                .map((ba) => ({ value: ba.id, label: ba.bankName + (ba.label ? ` (${ba.label})` : '') })),
-            ]} />
           <FormField label="N° Facture" value={form.invoiceNumber} onChange={setField('invoiceNumber')} placeholder="FAC-2026-001" required />
           <FormField label="Client / Nom" value={form.clientName} onChange={setField('clientName')} placeholder="Nom du client" required />
           <FormField label="Adresse Chantier" value={form.siteAddress} onChange={setField('siteAddress')} placeholder="Adresse du chantier" />
